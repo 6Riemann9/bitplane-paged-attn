@@ -1,0 +1,42 @@
+"""
+Bit-Plane Paged Attention 核心包。
+
+面向混合架构（Hybrid）与 GQA 长上下文大模型的无驱逐、PagedAttention 兼容
+嵌套双位面量化（2-bit Base + 按需 Top-k / Single-Pass Anchor-Gated 2-bit Residual）及融合 Triton GPU 解码算子库。
+"""
+
+from .packed_cache import (
+    PackedBitPlaneKVCache,
+    pack_2bit_quadrants,
+    unpack_2bit_quadrants,
+)
+from .quant_bitplane import (
+    QuantizedBitPlanePages,
+    compute_layer_outlier_stats,
+    paged_bitplane_attention_decode,
+    quantize_nested_4bit_bitplane,
+    quantize_uniform_2bit,
+)
+from .triton_kernels import (
+    triton_bitplane_decode,
+    triton_bitplane_dualstream_decode,
+    triton_bitplane_gated_decode,
+    triton_fp16_paged_decode,
+    triton_int4_paged_decode,
+)
+
+__all__ = [
+    "PackedBitPlaneKVCache",
+    "QuantizedBitPlanePages",
+    "compute_layer_outlier_stats",
+    "pack_2bit_quadrants",
+    "paged_bitplane_attention_decode",
+    "quantize_nested_4bit_bitplane",
+    "quantize_uniform_2bit",
+    "triton_bitplane_decode",
+    "triton_bitplane_dualstream_decode",
+    "triton_bitplane_gated_decode",
+    "triton_fp16_paged_decode",
+    "triton_int4_paged_decode",
+    "unpack_2bit_quadrants",
+]

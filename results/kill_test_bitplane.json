@@ -1,0 +1,1473 @@
+{
+  "hardware": {
+    "gpu": "NVIDIA GeForce RTX 5070 Ti",
+    "total_vram_gb": 15.89398193359375,
+    "torch": "2.9.1+cu128",
+    "platform": "Windows-10-10.0.22631-SP0"
+  },
+  "config": {
+    "prefix_len": 2048,
+    "page_size": 32,
+    "recent_tokens": 32,
+    "hist_len": 2016,
+    "cont_steps": 128
+  },
+  "models": {
+    "Qwen3.5-0.8B": {
+      "model_name": "Qwen3.5-0.8B",
+      "architecture": "Hybrid (18 GatedDeltaNet + 6 4:1 GQA Global)",
+      "full_attn_layers": [
+        3,
+        7,
+        11,
+        15,
+        19,
+        23
+      ],
+      "sanity_max_logit_diff": 0.3125,
+      "sanity_max_ppl_diff": 0.010914802551269531,
+      "ppl_results": {
+        "fp16": {
+          "mean_ppl": 2.0349483489990234,
+          "delta_ppl": 0.0,
+          "mean_kl": 0.0,
+          "eff_bits_per_elem": 16.0,
+          "union_ratio": 1.0,
+          "union_inflation": 1.0
+        },
+        "int4": {
+          "mean_ppl": 2.0221166014671326,
+          "delta_ppl": -0.01283174753189087,
+          "mean_kl": 0.0020593151566572487,
+          "eff_bits_per_elem": 4.0,
+          "union_ratio": 1.0,
+          "union_inflation": 1.0
+        },
+        "int2": {
+          "mean_ppl": 2.4521275758743286,
+          "delta_ppl": 0.4171792268753052,
+          "mean_kl": 0.17441241443157196,
+          "eff_bits_per_elem": 2.0,
+          "union_ratio": 0.0,
+          "union_inflation": 1.0
+        },
+        "base2": {
+          "mean_ppl": 2.167156755924225,
+          "delta_ppl": 0.13220840692520142,
+          "mean_kl": 0.07716584205627441,
+          "eff_bits_per_elem": 2.0,
+          "union_ratio": 0.0,
+          "union_inflation": 1.0
+        },
+        "quest_15_perhead": {
+          "mean_ppl": 2.172936797142029,
+          "delta_ppl": 0.13798844814300537,
+          "mean_kl": 0.061839474365115166,
+          "eff_bits_per_elem": 4.1771662433942165,
+          "union_ratio": 0.26107289021213853,
+          "union_inflation": 1.6447591519661835
+        },
+        "quest_15_gqa": {
+          "mean_ppl": 2.1515309810638428,
+          "delta_ppl": 0.11658263206481934,
+          "mean_kl": 0.0580841526389122,
+          "eff_bits_per_elem": 2.539682626724243,
+          "union_ratio": 0.1587301641702652,
+          "union_inflation": 1.0
+        },
+        "quest_10_gqa": {
+          "mean_ppl": 2.2555817365646362,
+          "delta_ppl": 0.2206333875656128,
+          "mean_kl": 0.10981771349906921,
+          "eff_bits_per_elem": 1.777777910232544,
+          "union_ratio": 0.111111119389534,
+          "union_inflation": 1.0
+        },
+        "bitplane_15_max": {
+          "mean_ppl": 2.0149388909339905,
+          "delta_ppl": -0.02000945806503296,
+          "mean_kl": 0.005877346266061068,
+          "eff_bits_per_elem": 2.3174603283405304,
+          "union_ratio": 0.1587301641702652,
+          "union_inflation": 1.0
+        },
+        "bitplane_15_mass": {
+          "mean_ppl": 2.0222741961479187,
+          "delta_ppl": -0.012674152851104736,
+          "mean_kl": 0.006286511430516839,
+          "eff_bits_per_elem": 2.3174603283405304,
+          "union_ratio": 0.1587301641702652,
+          "union_inflation": 1.0
+        },
+        "bitplane_10_max": {
+          "mean_ppl": 2.0174227356910706,
+          "delta_ppl": -0.01752561330795288,
+          "mean_kl": 0.007858584634959698,
+          "eff_bits_per_elem": 2.222222238779068,
+          "union_ratio": 0.111111119389534,
+          "union_inflation": 1.0
+        },
+        "bitplane_25_max": {
+          "mean_ppl": 2.0226537585258484,
+          "delta_ppl": -0.012294590473175049,
+          "mean_kl": 0.003478885628283024,
+          "eff_bits_per_elem": 2.5079365372657776,
+          "union_ratio": 0.2539682686328888,
+          "union_inflation": 1.0
+        },
+        "bitplane_15_droptail": {
+          "mean_ppl": 2.048170745372772,
+          "delta_ppl": 0.01322239637374878,
+          "mean_kl": 0.013984767254441977,
+          "eff_bits_per_elem": 0.6349206566810608,
+          "union_ratio": 0.1587301641702652,
+          "union_inflation": 1.0
+        },
+        "key_only_int2": {
+          "mean_ppl": 2.111913740634918,
+          "delta_ppl": 0.07696539163589478,
+          "mean_kl": 0.007439045235514641,
+          "eff_bits_per_elem": 9.0,
+          "union_ratio": 0.0,
+          "union_inflation": 1.0
+        },
+        "val_only_int2": {
+          "mean_ppl": 2.2586564421653748,
+          "delta_ppl": 0.22370809316635132,
+          "mean_kl": 0.1270502582192421,
+          "eff_bits_per_elem": 9.0,
+          "union_ratio": 0.0,
+          "union_inflation": 1.0
+        }
+      },
+      "needle_results": {
+        "fp16": {
+          "hits": 5,
+          "total": 5,
+          "hit_rate": 1.0,
+          "mean_code_prob": 0.9817747725380792,
+          "cases": [
+            {
+              "depth": 0.1,
+              "hit": true,
+              "mean_code_prob": 0.9872589906056722,
+              "decoded": " ORN-9482-X7.  D.  D."
+            },
+            {
+              "depth": 0.3,
+              "hit": true,
+              "mean_code_prob": 0.9807493223084344,
+              "decoded": " ZPH-3109-K4.  D.  D."
+            },
+            {
+              "depth": 0.5,
+              "hit": true,
+              "mean_code_prob": 0.9803216523594327,
+              "decoded": " VTX-6625-M9.  D.  D."
+            },
+            {
+              "depth": 0.7,
+              "hit": true,
+              "mean_code_prob": 0.9784371455510458,
+              "decoded": " KRM-4817-Q2.  D.  D."
+            },
+            {
+              "depth": 0.9,
+              "hit": true,
+              "mean_code_prob": 0.9821067518658109,
+              "decoded": " NBL-5294-T8.  D.  D."
+            }
+          ]
+        },
+        "int4": {
+          "hits": 5,
+          "total": 5,
+          "hit_rate": 1.0,
+          "mean_code_prob": 0.9772131151623196,
+          "cases": [
+            {
+              "depth": 0.1,
+              "hit": true,
+              "mean_code_prob": 0.976315074496799,
+              "decoded": " ORN-9482-X7.  D.  D."
+            },
+            {
+              "depth": 0.3,
+              "hit": true,
+              "mean_code_prob": 0.9790804982185364,
+              "decoded": " ZPH-3109-K4.  D.  D."
+            },
+            {
+              "depth": 0.5,
+              "hit": true,
+              "mean_code_prob": 0.9799745745129056,
+              "decoded": " VTX-6625-M9.  D.  D."
+            },
+            {
+              "depth": 0.7,
+              "hit": true,
+              "mean_code_prob": 0.9746346010102166,
+              "decoded": " KRM-4817-Q2.  D.  D."
+            },
+            {
+              "depth": 0.9,
+              "hit": true,
+              "mean_code_prob": 0.9760608275731405,
+              "decoded": " NBL-5294-T8.  D.  D."
+            }
+          ]
+        },
+        "int2": {
+          "hits": 4,
+          "total": 5,
+          "hit_rate": 0.8,
+          "mean_code_prob": 0.8433509624666637,
+          "cases": [
+            {
+              "depth": 0.1,
+              "hit": false,
+              "mean_code_prob": 0.7908690522114435,
+              "decoded": " verified to be: 1. 1. 1. 1."
+            },
+            {
+              "depth": 0.3,
+              "hit": true,
+              "mean_code_prob": 0.7955323656400045,
+              "decoded": " ZPH-3109-K4.  D.  D."
+            },
+            {
+              "depth": 0.5,
+              "hit": true,
+              "mean_code_prob": 0.9031875862015618,
+              "decoded": " VTX-6625-M9.  D.  D."
+            },
+            {
+              "depth": 0.7,
+              "hit": true,
+              "mean_code_prob": 0.8472241957982382,
+              "decoded": " KRM-4817-Q2.  D.  D."
+            },
+            {
+              "depth": 0.9,
+              "hit": true,
+              "mean_code_prob": 0.8799416124820709,
+              "decoded": " NBL-5294-T8.  D.  D."
+            }
+          ]
+        },
+        "base2": {
+          "hits": 5,
+          "total": 5,
+          "hit_rate": 1.0,
+          "mean_code_prob": 0.8869581596718895,
+          "cases": [
+            {
+              "depth": 0.1,
+              "hit": true,
+              "mean_code_prob": 0.8784822473923365,
+              "decoded": " ORN-9482-X7.  D.  D."
+            },
+            {
+              "depth": 0.3,
+              "hit": true,
+              "mean_code_prob": 0.8431632849905226,
+              "decoded": " ZPH-3109-K4.  D.  D."
+            },
+            {
+              "depth": 0.5,
+              "hit": true,
+              "mean_code_prob": 0.9199161728223165,
+              "decoded": " VTX-6625-M9.  D.  D."
+            },
+            {
+              "depth": 0.7,
+              "hit": true,
+              "mean_code_prob": 0.8883572916189829,
+              "decoded": " KRM-4817-Q2.  D.  D."
+            },
+            {
+              "depth": 0.9,
+              "hit": true,
+              "mean_code_prob": 0.9048718015352885,
+              "decoded": " NBL-5294-T8.  D.  D."
+            }
+          ]
+        },
+        "quest_15_perhead": {
+          "hits": 5,
+          "total": 5,
+          "hit_rate": 1.0,
+          "mean_code_prob": 0.9808531734678482,
+          "cases": [
+            {
+              "depth": 0.1,
+              "hit": true,
+              "mean_code_prob": 0.9858501156171163,
+              "decoded": " ORN-9482-X7.  D.  D."
+            },
+            {
+              "depth": 0.3,
+              "hit": true,
+              "mean_code_prob": 0.9805764026112027,
+              "decoded": " ZPH-3109-K4.  D.  D."
+            },
+            {
+              "depth": 0.5,
+              "hit": true,
+              "mean_code_prob": 0.9789648453394572,
+              "decoded": " VTX-6625-M9.  D.  D."
+            },
+            {
+              "depth": 0.7,
+              "hit": true,
+              "mean_code_prob": 0.9783659312460158,
+              "decoded": " KRM-4817-Q2.  D.  D."
+            },
+            {
+              "depth": 0.9,
+              "hit": true,
+              "mean_code_prob": 0.9805085725254483,
+              "decoded": " NBL-5294-T8.  D.  D."
+            }
+          ]
+        },
+        "quest_15_gqa": {
+          "hits": 5,
+          "total": 5,
+          "hit_rate": 1.0,
+          "mean_code_prob": 0.9816525803671942,
+          "cases": [
+            {
+              "depth": 0.1,
+              "hit": true,
+              "mean_code_prob": 0.985949436823527,
+              "decoded": " ORN-9482-X7.  D.  D."
+            },
+            {
+              "depth": 0.3,
+              "hit": true,
+              "mean_code_prob": 0.9808127284049988,
+              "decoded": " ZPH-3109-K4.  D.  D."
+            },
+            {
+              "depth": 0.5,
+              "hit": true,
+              "mean_code_prob": 0.9810363915231493,
+              "decoded": " VTX-6625-M9.  D.  D."
+            },
+            {
+              "depth": 0.7,
+              "hit": true,
+              "mean_code_prob": 0.9784963528315226,
+              "decoded": " KRM-4817-Q2.  D.  D."
+            },
+            {
+              "depth": 0.9,
+              "hit": true,
+              "mean_code_prob": 0.9819679922527738,
+              "decoded": " NBL-5294-T8.  D.  D."
+            }
+          ]
+        },
+        "bitplane_15_max": {
+          "hits": 5,
+          "total": 5,
+          "hit_rate": 1.0,
+          "mean_code_prob": 0.9763029456138611,
+          "cases": [
+            {
+              "depth": 0.1,
+              "hit": true,
+              "mean_code_prob": 0.9753092063797845,
+              "decoded": " ORN-9482-X7.  D.  D."
+            },
+            {
+              "depth": 0.3,
+              "hit": true,
+              "mean_code_prob": 0.9782969090673659,
+              "decoded": " ZPH-3109-K4.  D.  D."
+            },
+            {
+              "depth": 0.5,
+              "hit": true,
+              "mean_code_prob": 0.9792467488182915,
+              "decoded": " VTX-6625-M9.  D.  D."
+            },
+            {
+              "depth": 0.7,
+              "hit": true,
+              "mean_code_prob": 0.9731900559531318,
+              "decoded": " KRM-4817-Q2.  D.  D."
+            },
+            {
+              "depth": 0.9,
+              "hit": true,
+              "mean_code_prob": 0.9754718078507317,
+              "decoded": " NBL-5294-T8.  D.  D."
+            }
+          ]
+        },
+        "bitplane_15_mass": {
+          "hits": 5,
+          "total": 5,
+          "hit_rate": 1.0,
+          "mean_code_prob": 0.9762945294380188,
+          "cases": [
+            {
+              "depth": 0.1,
+              "hit": true,
+              "mean_code_prob": 0.9754072162840102,
+              "decoded": " ORN-9482-X7.  D.  D."
+            },
+            {
+              "depth": 0.3,
+              "hit": true,
+              "mean_code_prob": 0.9785223868158128,
+              "decoded": " ZPH-3109-K4.  D.  D."
+            },
+            {
+              "depth": 0.5,
+              "hit": true,
+              "mean_code_prob": 0.9792771803008186,
+              "decoded": " VTX-6625-M9.  D.  D."
+            },
+            {
+              "depth": 0.7,
+              "hit": true,
+              "mean_code_prob": 0.973050938712226,
+              "decoded": " KRM-4817-Q2.  D.  D."
+            },
+            {
+              "depth": 0.9,
+              "hit": true,
+              "mean_code_prob": 0.9752149250772264,
+              "decoded": " NBL-5294-T8.  D.  D."
+            }
+          ]
+        },
+        "bitplane_10_max": {
+          "hits": 5,
+          "total": 5,
+          "hit_rate": 1.0,
+          "mean_code_prob": 0.9760427302784389,
+          "cases": [
+            {
+              "depth": 0.1,
+              "hit": true,
+              "mean_code_prob": 0.975202567047543,
+              "decoded": " ORN-9482-X7.  D.  D."
+            },
+            {
+              "depth": 0.3,
+              "hit": true,
+              "mean_code_prob": 0.9781100153923035,
+              "decoded": " ZPH-3109-K4.  D.  D."
+            },
+            {
+              "depth": 0.5,
+              "hit": true,
+              "mean_code_prob": 0.978982600900862,
+              "decoded": " VTX-6625-M9.  D.  D."
+            },
+            {
+              "depth": 0.7,
+              "hit": true,
+              "mean_code_prob": 0.973261641131507,
+              "decoded": " KRM-4817-Q2.  D.  D."
+            },
+            {
+              "depth": 0.9,
+              "hit": true,
+              "mean_code_prob": 0.9746568269199796,
+              "decoded": " NBL-5294-T8.  D.  D."
+            }
+          ]
+        },
+        "bitplane_15_droptail": {
+          "hits": 5,
+          "total": 5,
+          "hit_rate": 1.0,
+          "mean_code_prob": 0.9768030722935995,
+          "cases": [
+            {
+              "depth": 0.1,
+              "hit": true,
+              "mean_code_prob": 0.9737983014848497,
+              "decoded": " ORN-9482-X7.  D.  D."
+            },
+            {
+              "depth": 0.3,
+              "hit": true,
+              "mean_code_prob": 0.9792767100863986,
+              "decoded": " ZPH-3109-K4.  D.  D."
+            },
+            {
+              "depth": 0.5,
+              "hit": true,
+              "mean_code_prob": 0.9804181191656325,
+              "decoded": " VTX-6625-M9.  D.  D."
+            },
+            {
+              "depth": 0.7,
+              "hit": true,
+              "mean_code_prob": 0.9745893014801873,
+              "decoded": " KRM-4817-Q2.  D. 10"
+            },
+            {
+              "depth": 0.9,
+              "hit": true,
+              "mean_code_prob": 0.9759329292509291,
+              "decoded": " NBL-5294-T8.  D. 10"
+            }
+          ]
+        }
+      },
+      "layer_diagnostics": {
+        "3": {
+          "k_peak_over_rms": 8.654049096489352,
+          "v_peak_over_rms": 8.977281873856125,
+          "k_channel_max_over_median": 5.9916698932647705,
+          "v_channel_max_over_median": 2.4704447984695435,
+          "k_int2_rel_err": 0.27214957773685455,
+          "k_base2_rel_err": 0.22495336085557938,
+          "k_int4_rel_err": 0.05408456735312939,
+          "v_int2_rel_err": 0.6071381568908691,
+          "v_base2_rel_err": 0.48214417695999146,
+          "v_int4_rel_err": 0.1193908117711544
+        },
+        "7": {
+          "k_peak_over_rms": 8.693083507837706,
+          "v_peak_over_rms": 43.75449150944131,
+          "k_channel_max_over_median": 3.2567665576934814,
+          "v_channel_max_over_median": 6.313971996307373,
+          "k_int2_rel_err": 0.2809220403432846,
+          "k_base2_rel_err": 0.2317856177687645,
+          "k_int4_rel_err": 0.05577279254794121,
+          "v_int2_rel_err": 0.7775022983551025,
+          "v_base2_rel_err": 0.6404712200164795,
+          "v_int4_rel_err": 0.17010213434696198
+        },
+        "11": {
+          "k_peak_over_rms": 13.8949935964337,
+          "v_peak_over_rms": 38.570033987702494,
+          "k_channel_max_over_median": 4.0958592891693115,
+          "v_channel_max_over_median": 3.928852915763855,
+          "k_int2_rel_err": 0.2515779733657837,
+          "k_base2_rel_err": 0.20737271010875702,
+          "k_int4_rel_err": 0.04988962039351463,
+          "v_int2_rel_err": 0.7769215404987335,
+          "v_base2_rel_err": 0.6019527912139893,
+          "v_int4_rel_err": 0.14925744384527206
+        },
+        "15": {
+          "k_peak_over_rms": 10.461866194557292,
+          "v_peak_over_rms": 54.02982769714533,
+          "k_channel_max_over_median": 4.813586711883545,
+          "v_channel_max_over_median": 5.019930601119995,
+          "k_int2_rel_err": 0.23610450327396393,
+          "k_base2_rel_err": 0.1943158656358719,
+          "k_int4_rel_err": 0.04679670371115208,
+          "v_int2_rel_err": 0.8214521408081055,
+          "v_base2_rel_err": 0.6543382406234741,
+          "v_int4_rel_err": 0.1677694469690323
+        },
+        "19": {
+          "k_peak_over_rms": 6.572026183533479,
+          "v_peak_over_rms": 19.558523665989444,
+          "k_channel_max_over_median": 4.027020215988159,
+          "v_channel_max_over_median": 6.017934799194336,
+          "k_int2_rel_err": 0.2547164410352707,
+          "k_base2_rel_err": 0.21025128662586212,
+          "k_int4_rel_err": 0.05057464353740215,
+          "v_int2_rel_err": 1.1633419394493103,
+          "v_base2_rel_err": 0.9038623571395874,
+          "v_int4_rel_err": 0.2040378674864769
+        },
+        "23": {
+          "k_peak_over_rms": 6.608407374092666,
+          "v_peak_over_rms": 5.570083626752382,
+          "k_channel_max_over_median": 3.240811824798584,
+          "v_channel_max_over_median": 9.072312355041504,
+          "k_int2_rel_err": 0.2789403945207596,
+          "k_base2_rel_err": 0.23070240765810013,
+          "k_int4_rel_err": 0.055447498336434364,
+          "v_int2_rel_err": 0.7357537150382996,
+          "v_base2_rel_err": 0.5676445960998535,
+          "v_int4_rel_err": 0.12039078399538994
+        }
+      },
+      "elapsed_sec": 38.429254099999525
+    },
+    "Qwen3-0.6B": {
+      "model_name": "Qwen3-0.6B",
+      "architecture": "Dense (28 2:1 GQA Global)",
+      "full_attn_layers": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27
+      ],
+      "sanity_max_logit_diff": 1.75,
+      "sanity_max_ppl_diff": 0.004199504852294922,
+      "ppl_results": {
+        "fp16": {
+          "mean_ppl": 2.4451072216033936,
+          "delta_ppl": 0.0,
+          "mean_kl": 0.0,
+          "eff_bits_per_elem": 16.0,
+          "union_ratio": 1.0,
+          "union_inflation": 1.0
+        },
+        "int4": {
+          "mean_ppl": 2.458562672138214,
+          "delta_ppl": 0.013455450534820557,
+          "mean_kl": 0.002305573783814907,
+          "eff_bits_per_elem": 4.0,
+          "union_ratio": 1.0,
+          "union_inflation": 1.0
+        },
+        "int2": {
+          "mean_ppl": 2.4181967973709106,
+          "delta_ppl": -0.02691042423248291,
+          "mean_kl": 0.0985063686966896,
+          "eff_bits_per_elem": 2.0,
+          "union_ratio": 0.0,
+          "union_inflation": 1.0
+        },
+        "base2": {
+          "mean_ppl": 2.543286144733429,
+          "delta_ppl": 0.0981789231300354,
+          "mean_kl": 0.10283340513706207,
+          "eff_bits_per_elem": 2.0,
+          "union_ratio": 0.0,
+          "union_inflation": 1.0
+        },
+        "quest_15_perhead": {
+          "mean_ppl": 2.8270905017852783,
+          "delta_ppl": 0.38198328018188477,
+          "mean_kl": 0.10384915769100189,
+          "eff_bits_per_elem": 3.4469513722828458,
+          "union_ratio": 0.21543446076767786,
+          "union_inflation": 1.3572370563202316
+        },
+        "quest_15_gqa": {
+          "mean_ppl": 2.787756323814392,
+          "delta_ppl": 0.34264910221099854,
+          "mean_kl": 0.07830506935715675,
+          "eff_bits_per_elem": 2.539682626724243,
+          "union_ratio": 0.1587301641702652,
+          "union_inflation": 1.0
+        },
+        "quest_10_gqa": {
+          "mean_ppl": 2.982725203037262,
+          "delta_ppl": 0.5376179814338684,
+          "mean_kl": 0.14433540403842926,
+          "eff_bits_per_elem": 1.777777910232544,
+          "union_ratio": 0.111111119389534,
+          "union_inflation": 1.0
+        },
+        "bitplane_15_max": {
+          "mean_ppl": 2.4393651485443115,
+          "delta_ppl": -0.005742073059082031,
+          "mean_kl": 0.003283626399934292,
+          "eff_bits_per_elem": 2.3174603283405304,
+          "union_ratio": 0.1587301641702652,
+          "union_inflation": 1.0
+        },
+        "bitplane_15_mass": {
+          "mean_ppl": 2.461336076259613,
+          "delta_ppl": 0.016228854656219482,
+          "mean_kl": 0.0033785984851419926,
+          "eff_bits_per_elem": 2.3174603283405304,
+          "union_ratio": 0.1587301641702652,
+          "union_inflation": 1.0
+        },
+        "bitplane_10_max": {
+          "mean_ppl": 2.458451569080353,
+          "delta_ppl": 0.013344347476959229,
+          "mean_kl": 0.0044648186303675175,
+          "eff_bits_per_elem": 2.222222238779068,
+          "union_ratio": 0.111111119389534,
+          "union_inflation": 1.0
+        },
+        "bitplane_25_max": {
+          "mean_ppl": 2.456222414970398,
+          "delta_ppl": 0.011115193367004395,
+          "mean_kl": 0.0028487268136814237,
+          "eff_bits_per_elem": 2.5079365372657776,
+          "union_ratio": 0.2539682686328888,
+          "union_inflation": 1.0
+        },
+        "bitplane_15_droptail": {
+          "mean_ppl": 2.4354277849197388,
+          "delta_ppl": -0.009679436683654785,
+          "mean_kl": 0.014921501744538546,
+          "eff_bits_per_elem": 0.6349206566810608,
+          "union_ratio": 0.1587301641702652,
+          "union_inflation": 1.0
+        },
+        "key_only_int2": {
+          "mean_ppl": 2.3475597500801086,
+          "delta_ppl": -0.09754747152328491,
+          "mean_kl": 0.029982293024659157,
+          "eff_bits_per_elem": 9.0,
+          "union_ratio": 0.0,
+          "union_inflation": 1.0
+        },
+        "val_only_int2": {
+          "mean_ppl": 2.526242256164551,
+          "delta_ppl": 0.08113503456115723,
+          "mean_kl": 0.024698736146092415,
+          "eff_bits_per_elem": 9.0,
+          "union_ratio": 0.0,
+          "union_inflation": 1.0
+        }
+      },
+      "needle_results": {
+        "fp16": {
+          "hits": 5,
+          "total": 5,
+          "hit_rate": 1.0,
+          "mean_code_prob": 0.9640806065665352,
+          "cases": [
+            {
+              "depth": 0.1,
+              "hit": true,
+              "mean_code_prob": 0.9648602075046964,
+              "decoded": " ORN-9482-X7.  Distributed KV-cache management"
+            },
+            {
+              "depth": 0.3,
+              "hit": true,
+              "mean_code_prob": 0.9655529525544908,
+              "decoded": " ZPH-3109-K4.  Distributed KV-cache management"
+            },
+            {
+              "depth": 0.5,
+              "hit": true,
+              "mean_code_prob": 0.9729998177952237,
+              "decoded": " VTX-6625-M9.  Distributed KV-cache management"
+            },
+            {
+              "depth": 0.7,
+              "hit": true,
+              "mean_code_prob": 0.9517932997809516,
+              "decoded": " KRM-4817-Q2.  Distributed KV-cache management"
+            },
+            {
+              "depth": 0.9,
+              "hit": true,
+              "mean_code_prob": 0.9651967551973131,
+              "decoded": " NBL-5294-T8.  D\n\nThe official verification"
+            }
+          ]
+        },
+        "int4": {
+          "hits": 5,
+          "total": 5,
+          "hit_rate": 1.0,
+          "mean_code_prob": 0.9647973312271967,
+          "cases": [
+            {
+              "depth": 0.1,
+              "hit": true,
+              "mean_code_prob": 0.9666927125718858,
+              "decoded": " ORN-9482-X7.  Distributed KV-cache management"
+            },
+            {
+              "depth": 0.3,
+              "hit": true,
+              "mean_code_prob": 0.9681215153800117,
+              "decoded": " ZPH-3109-K4.  Distributed KV-cache management"
+            },
+            {
+              "depth": 0.5,
+              "hit": true,
+              "mean_code_prob": 0.9747475849257575,
+              "decoded": " VTX-6625-M9.  Distributed KV-cache management"
+            },
+            {
+              "depth": 0.7,
+              "hit": true,
+              "mean_code_prob": 0.9503421982129415,
+              "decoded": " KRM-4817-Q2.  Distributed KV-cache management"
+            },
+            {
+              "depth": 0.9,
+              "hit": true,
+              "mean_code_prob": 0.9640826450453864,
+              "decoded": " NBL-5294-T8.  D\n\nThe official verification"
+            }
+          ]
+        },
+        "int2": {
+          "hits": 5,
+          "total": 5,
+          "hit_rate": 1.0,
+          "mean_code_prob": 0.9280415263440874,
+          "cases": [
+            {
+              "depth": 0.1,
+              "hit": true,
+              "mean_code_prob": 0.9231004185146756,
+              "decoded": " ORN-9482-X7.  Distributed KV-cache management"
+            },
+            {
+              "depth": 0.3,
+              "hit": true,
+              "mean_code_prob": 0.9029981957541572,
+              "decoded": " ZPH-3109-K4.  [AUDIT RECORD]"
+            },
+            {
+              "depth": 0.5,
+              "hit": true,
+              "mean_code_prob": 0.9165566265583038,
+              "decoded": " VTX-6625-M9.  Distributed KV-cache management"
+            },
+            {
+              "depth": 0.7,
+              "hit": true,
+              "mean_code_prob": 0.925721161895328,
+              "decoded": " KRM-4817-Q2.  Distributed KV-cache management"
+            },
+            {
+              "depth": 0.9,
+              "hit": true,
+              "mean_code_prob": 0.9718312289979723,
+              "decoded": " NBL-5294-T8.  Distributed KV-cache management"
+            }
+          ]
+        },
+        "base2": {
+          "hits": 5,
+          "total": 5,
+          "hit_rate": 1.0,
+          "mean_code_prob": 0.909262701537874,
+          "cases": [
+            {
+              "depth": 0.1,
+              "hit": true,
+              "mean_code_prob": 0.9067061841487885,
+              "decoded": " ORN-9482-X7. The audit record above includes the"
+            },
+            {
+              "depth": 0.3,
+              "hit": true,
+              "mean_code_prob": 0.8938848111364577,
+              "decoded": " ZPH-3109-K4.  [END]\n####\n**"
+            },
+            {
+              "depth": 0.5,
+              "hit": true,
+              "mean_code_prob": 0.9025597307417128,
+              "decoded": " VTX-6625-M9.  Distributed KV-cache management"
+            },
+            {
+              "depth": 0.7,
+              "hit": true,
+              "mean_code_prob": 0.9219366643163893,
+              "decoded": " KRM-4817-Q2.  Distributed KV-cache management"
+            },
+            {
+              "depth": 0.9,
+              "hit": true,
+              "mean_code_prob": 0.9212261173460219,
+              "decoded": " NBL-5294-T8.  D  52"
+            }
+          ]
+        },
+        "quest_15_perhead": {
+          "hits": 5,
+          "total": 5,
+          "hit_rate": 1.0,
+          "mean_code_prob": 0.9569444537162781,
+          "cases": [
+            {
+              "depth": 0.1,
+              "hit": true,
+              "mean_code_prob": 0.9595081077681648,
+              "decoded": " ORN-9482-X7.  Distributed KV-cache management"
+            },
+            {
+              "depth": 0.3,
+              "hit": true,
+              "mean_code_prob": 0.9589971701304117,
+              "decoded": " ZPH-3109-K4.  [AUDIT RECORD]"
+            },
+            {
+              "depth": 0.5,
+              "hit": true,
+              "mean_code_prob": 0.9629257453812493,
+              "decoded": " VTX-6625-M9.  D\n\nThe official verification"
+            },
+            {
+              "depth": 0.7,
+              "hit": true,
+              "mean_code_prob": 0.9454534848531088,
+              "decoded": " KRM-4817-Q2.  Distributed KV-cache management"
+            },
+            {
+              "depth": 0.9,
+              "hit": true,
+              "mean_code_prob": 0.9578377604484558,
+              "decoded": " NBL-5294-T8.  D\n\nThe official verification"
+            }
+          ]
+        },
+        "quest_15_gqa": {
+          "hits": 5,
+          "total": 5,
+          "hit_rate": 1.0,
+          "mean_code_prob": 0.9560547961129082,
+          "cases": [
+            {
+              "depth": 0.1,
+              "hit": true,
+              "mean_code_prob": 0.9601489437950982,
+              "decoded": " ORN-9482-X7.  Distributed KV-cache management"
+            },
+            {
+              "depth": 0.3,
+              "hit": true,
+              "mean_code_prob": 0.958962427245246,
+              "decoded": " ZPH-3109-K4.  [AUDIT RECORD]"
+            },
+            {
+              "depth": 0.5,
+              "hit": true,
+              "mean_code_prob": 0.9629374477598402,
+              "decoded": " VTX-6625-M9.  D\n\nThe official verification"
+            },
+            {
+              "depth": 0.7,
+              "hit": true,
+              "mean_code_prob": 0.9439856741163466,
+              "decoded": " KRM-4817-Q2.  Distributed KV-cache management"
+            },
+            {
+              "depth": 0.9,
+              "hit": true,
+              "mean_code_prob": 0.9542394876480103,
+              "decoded": " NBL-5294-T8.  D\n\nThe official verification"
+            }
+          ]
+        },
+        "bitplane_15_max": {
+          "hits": 5,
+          "total": 5,
+          "hit_rate": 1.0,
+          "mean_code_prob": 0.9639721367094252,
+          "cases": [
+            {
+              "depth": 0.1,
+              "hit": true,
+              "mean_code_prob": 0.9667985637982687,
+              "decoded": " ORN-9482-X7.  Distributed KV-cache management"
+            },
+            {
+              "depth": 0.3,
+              "hit": true,
+              "mean_code_prob": 0.9644067221217685,
+              "decoded": " ZPH-3109-K4.  D\n\nBased on the"
+            },
+            {
+              "depth": 0.5,
+              "hit": true,
+              "mean_code_prob": 0.9729336235258315,
+              "decoded": " VTX-6625-M9.  D\n\nThe official verification"
+            },
+            {
+              "depth": 0.7,
+              "hit": true,
+              "mean_code_prob": 0.9522041347291734,
+              "decoded": " KRM-4817-Q2.  Distributed KV-cache management"
+            },
+            {
+              "depth": 0.9,
+              "hit": true,
+              "mean_code_prob": 0.9635176393720839,
+              "decoded": " NBL-5294-T8.  D\n\nThe official verification"
+            }
+          ]
+        },
+        "bitplane_15_mass": {
+          "hits": 5,
+          "total": 5,
+          "hit_rate": 1.0,
+          "mean_code_prob": 0.9629302700360617,
+          "cases": [
+            {
+              "depth": 0.1,
+              "hit": true,
+              "mean_code_prob": 0.9654066363970438,
+              "decoded": " ORN-9482-X7.  Distributed KV-cache management"
+            },
+            {
+              "depth": 0.3,
+              "hit": true,
+              "mean_code_prob": 0.964984655380249,
+              "decoded": " ZPH-3109-K4.  D\n\nBased on the"
+            },
+            {
+              "depth": 0.5,
+              "hit": true,
+              "mean_code_prob": 0.9710671967930264,
+              "decoded": " VTX-6625-M9.  D\n\nThe official verification"
+            },
+            {
+              "depth": 0.7,
+              "hit": true,
+              "mean_code_prob": 0.9508692820866903,
+              "decoded": " KRM-4817-Q2.  Distributed KV-cache management"
+            },
+            {
+              "depth": 0.9,
+              "hit": true,
+              "mean_code_prob": 0.9623235795232985,
+              "decoded": " NBL-5294-T8.  D\n\nThe official verification"
+            }
+          ]
+        },
+        "bitplane_10_max": {
+          "hits": 5,
+          "total": 5,
+          "hit_rate": 1.0,
+          "mean_code_prob": 0.9631660434934828,
+          "cases": [
+            {
+              "depth": 0.1,
+              "hit": true,
+              "mean_code_prob": 0.9659419589572482,
+              "decoded": " ORN-9482-X7.  Distributed KV-cache management"
+            },
+            {
+              "depth": 0.3,
+              "hit": true,
+              "mean_code_prob": 0.9650572339693705,
+              "decoded": " ZPH-3109-K4.  D\n\nBased on the"
+            },
+            {
+              "depth": 0.5,
+              "hit": true,
+              "mean_code_prob": 0.9729081259833442,
+              "decoded": " VTX-6625-M9.  D\n\nThe official verification"
+            },
+            {
+              "depth": 0.7,
+              "hit": true,
+              "mean_code_prob": 0.9498694207933214,
+              "decoded": " KRM-4817-Q2.  Distributed KV-cache management"
+            },
+            {
+              "depth": 0.9,
+              "hit": true,
+              "mean_code_prob": 0.9620534777641296,
+              "decoded": " NBL-5294-T8.  D\n\nThe official verification"
+            }
+          ]
+        },
+        "bitplane_15_droptail": {
+          "hits": 5,
+          "total": 5,
+          "hit_rate": 1.0,
+          "mean_code_prob": 0.9586799886491564,
+          "cases": [
+            {
+              "depth": 0.1,
+              "hit": true,
+              "mean_code_prob": 0.9606363773345947,
+              "decoded": " ORN-9482-X7.  Distributed KV-cache management"
+            },
+            {
+              "depth": 0.3,
+              "hit": true,
+              "mean_code_prob": 0.9594827095667521,
+              "decoded": " ZPH-3109-K4.  [AUDIT RECORD]"
+            },
+            {
+              "depth": 0.5,
+              "hit": true,
+              "mean_code_prob": 0.9676362673441569,
+              "decoded": " VTX-6625-M9.  Distributed KV-cache management"
+            },
+            {
+              "depth": 0.7,
+              "hit": true,
+              "mean_code_prob": 0.946027417977651,
+              "decoded": " KRM-4817-Q2.  Distributed KV-cache management"
+            },
+            {
+              "depth": 0.9,
+              "hit": true,
+              "mean_code_prob": 0.9596171710226271,
+              "decoded": " NBL-5294-T8.  D\n\nThe official verification"
+            }
+          ]
+        }
+      },
+      "layer_diagnostics": {
+        "0": {
+          "k_peak_over_rms": 24.056359660608393,
+          "v_peak_over_rms": 16.08303186305116,
+          "k_channel_max_over_median": 169.3885955810547,
+          "v_channel_max_over_median": 3.7850184440612793,
+          "k_int2_rel_err": 0.10716816037893295,
+          "k_base2_rel_err": 0.08645468205213547,
+          "k_int4_rel_err": 0.02105961088091135,
+          "v_int2_rel_err": 0.6842767298221588,
+          "v_base2_rel_err": 0.5485000610351562,
+          "v_int4_rel_err": 0.13317129015922546
+        },
+        "1": {
+          "k_peak_over_rms": 19.125731199349147,
+          "v_peak_over_rms": 8.187472509685634,
+          "k_channel_max_over_median": 84.85028457641602,
+          "v_channel_max_over_median": 2.8661423921585083,
+          "k_int2_rel_err": 0.06044839322566986,
+          "k_base2_rel_err": 0.04996836744248867,
+          "k_int4_rel_err": 0.012090030126273632,
+          "v_int2_rel_err": 0.5874037444591522,
+          "v_base2_rel_err": 0.47342710196971893,
+          "v_int4_rel_err": 0.11747299507260323
+        },
+        "2": {
+          "k_peak_over_rms": 20.77115547873954,
+          "v_peak_over_rms": 24.15370859239578,
+          "k_channel_max_over_median": 94.77550888061523,
+          "v_channel_max_over_median": 2.745207905769348,
+          "k_int2_rel_err": 0.089327372610569,
+          "k_base2_rel_err": 0.07339431717991829,
+          "k_int4_rel_err": 0.01775467023253441,
+          "v_int2_rel_err": 0.5717678368091583,
+          "v_base2_rel_err": 0.4592076987028122,
+          "v_int4_rel_err": 0.11373738944530487
+        },
+        "3": {
+          "k_peak_over_rms": 19.498372428325748,
+          "v_peak_over_rms": 9.258478073392613,
+          "k_channel_max_over_median": 44.828678131103516,
+          "v_channel_max_over_median": 3.2053685188293457,
+          "k_int2_rel_err": 0.10678528249263763,
+          "k_base2_rel_err": 0.08815167099237442,
+          "k_int4_rel_err": 0.02121759206056595,
+          "v_int2_rel_err": 0.5981183350086212,
+          "v_base2_rel_err": 0.4834951162338257,
+          "v_int4_rel_err": 0.11967294290661812
+        },
+        "4": {
+          "k_peak_over_rms": 16.137194393642034,
+          "v_peak_over_rms": 9.8629839500811,
+          "k_channel_max_over_median": 41.13427734375,
+          "v_channel_max_over_median": 2.79982590675354,
+          "k_int2_rel_err": 0.1026756688952446,
+          "k_base2_rel_err": 0.08491775393486023,
+          "k_int4_rel_err": 0.02041721623390913,
+          "v_int2_rel_err": 0.5711501240730286,
+          "v_base2_rel_err": 0.46108514070510864,
+          "v_int4_rel_err": 0.11415141448378563
+        },
+        "5": {
+          "k_peak_over_rms": 14.036169841172633,
+          "v_peak_over_rms": 9.033319910685195,
+          "k_channel_max_over_median": 57.128448486328125,
+          "v_channel_max_over_median": 2.8829857110977173,
+          "k_int2_rel_err": 0.08105471730232239,
+          "k_base2_rel_err": 0.06678245216608047,
+          "k_int4_rel_err": 0.016155119985342026,
+          "v_int2_rel_err": 0.579076886177063,
+          "v_base2_rel_err": 0.4665835201740265,
+          "v_int4_rel_err": 0.11567558720707893
+        },
+        "6": {
+          "k_peak_over_rms": 19.7081337122171,
+          "v_peak_over_rms": 8.804668537387155,
+          "k_channel_max_over_median": 32.12362575531006,
+          "v_channel_max_over_median": 2.9907883405685425,
+          "k_int2_rel_err": 0.1560763493180275,
+          "k_base2_rel_err": 0.1286929026246071,
+          "k_int4_rel_err": 0.030982044525444508,
+          "v_int2_rel_err": 0.5935526490211487,
+          "v_base2_rel_err": 0.47859086096286774,
+          "v_int4_rel_err": 0.11855223402380943
+        },
+        "7": {
+          "k_peak_over_rms": 15.470329095880565,
+          "v_peak_over_rms": 12.355152421800597,
+          "k_channel_max_over_median": 39.4127197265625,
+          "v_channel_max_over_median": 2.7858197689056396,
+          "k_int2_rel_err": 0.10036131367087364,
+          "k_base2_rel_err": 0.0826752707362175,
+          "k_int4_rel_err": 0.01993098296225071,
+          "v_int2_rel_err": 0.5944879651069641,
+          "v_base2_rel_err": 0.47824589908123016,
+          "v_int4_rel_err": 0.11828575655817986
+        },
+        "8": {
+          "k_peak_over_rms": 14.445761575261715,
+          "v_peak_over_rms": 44.14032990763266,
+          "k_channel_max_over_median": 16.159610748291016,
+          "v_channel_max_over_median": 3.391088843345642,
+          "k_int2_rel_err": 0.20113354176282883,
+          "k_base2_rel_err": 0.16603853553533554,
+          "k_int4_rel_err": 0.039924005046486855,
+          "v_int2_rel_err": 0.6308139264583588,
+          "v_base2_rel_err": 0.5013068914413452,
+          "v_int4_rel_err": 0.12366173043847084
+        },
+        "9": {
+          "k_peak_over_rms": 14.410647442610353,
+          "v_peak_over_rms": 12.582429097211094,
+          "k_channel_max_over_median": 19.9523983001709,
+          "v_channel_max_over_median": 2.918058753013611,
+          "k_int2_rel_err": 0.1520739495754242,
+          "k_base2_rel_err": 0.12556903064250946,
+          "k_int4_rel_err": 0.03019803576171398,
+          "v_int2_rel_err": 0.5932285189628601,
+          "v_base2_rel_err": 0.4775322675704956,
+          "v_int4_rel_err": 0.11846436932682991
+        },
+        "10": {
+          "k_peak_over_rms": 16.957481595877468,
+          "v_peak_over_rms": 20.665619776436998,
+          "k_channel_max_over_median": 41.520673751831055,
+          "v_channel_max_over_median": 3.051807165145874,
+          "k_int2_rel_err": 0.10512259602546692,
+          "k_base2_rel_err": 0.0867738164961338,
+          "k_int4_rel_err": 0.020880568772554398,
+          "v_int2_rel_err": 0.6125878989696503,
+          "v_base2_rel_err": 0.4939257502555847,
+          "v_int4_rel_err": 0.12222833558917046
+        },
+        "11": {
+          "k_peak_over_rms": 18.315025047629057,
+          "v_peak_over_rms": 22.49000288622407,
+          "k_channel_max_over_median": 7.227384805679321,
+          "v_channel_max_over_median": 3.594888925552368,
+          "k_int2_rel_err": 0.24581564962863922,
+          "k_base2_rel_err": 0.2026030793786049,
+          "k_int4_rel_err": 0.04878128319978714,
+          "v_int2_rel_err": 0.6375457346439362,
+          "v_base2_rel_err": 0.5123816728591919,
+          "v_int4_rel_err": 0.12671229988336563
+        },
+        "12": {
+          "k_peak_over_rms": 19.14965129221593,
+          "v_peak_over_rms": 37.79984139370592,
+          "k_channel_max_over_median": 32.05756759643555,
+          "v_channel_max_over_median": 3.2591168880462646,
+          "k_int2_rel_err": 0.13758749514818192,
+          "k_base2_rel_err": 0.11363311111927032,
+          "k_int4_rel_err": 0.02737214509397745,
+          "v_int2_rel_err": 0.6316777169704437,
+          "v_base2_rel_err": 0.498811811208725,
+          "v_int4_rel_err": 0.12153574824333191
+        },
+        "13": {
+          "k_peak_over_rms": 12.434773825778915,
+          "v_peak_over_rms": 33.30896843753739,
+          "k_channel_max_over_median": 5.520989418029785,
+          "v_channel_max_over_median": 3.26688289642334,
+          "k_int2_rel_err": 0.23970744758844376,
+          "k_base2_rel_err": 0.19728955626487732,
+          "k_int4_rel_err": 0.04749354533851147,
+          "v_int2_rel_err": 0.6266749799251556,
+          "v_base2_rel_err": 0.5062915682792664,
+          "v_int4_rel_err": 0.12480391561985016
+        },
+        "14": {
+          "k_peak_over_rms": 18.247669969078174,
+          "v_peak_over_rms": 39.15474743423968,
+          "k_channel_max_over_median": 13.643004894256592,
+          "v_channel_max_over_median": 3.103389263153076,
+          "k_int2_rel_err": 0.20491128414869308,
+          "k_base2_rel_err": 0.1685744747519493,
+          "k_int4_rel_err": 0.04059741459786892,
+          "v_int2_rel_err": 0.6048116087913513,
+          "v_base2_rel_err": 0.48645052313804626,
+          "v_int4_rel_err": 0.11928088217973709
+        },
+        "15": {
+          "k_peak_over_rms": 16.375119051814703,
+          "v_peak_over_rms": 9.260035180751212,
+          "k_channel_max_over_median": 36.83502960205078,
+          "v_channel_max_over_median": 3.148111581802368,
+          "k_int2_rel_err": 0.15813595056533813,
+          "k_base2_rel_err": 0.12848928570747375,
+          "k_int4_rel_err": 0.031406854279339314,
+          "v_int2_rel_err": 0.5980418622493744,
+          "v_base2_rel_err": 0.4827990233898163,
+          "v_int4_rel_err": 0.11970090866088867
+        },
+        "16": {
+          "k_peak_over_rms": 16.279833778639656,
+          "v_peak_over_rms": 11.634407582317028,
+          "k_channel_max_over_median": 9.490819931030273,
+          "v_channel_max_over_median": 3.2669239044189453,
+          "k_int2_rel_err": 0.22537200152873993,
+          "k_base2_rel_err": 0.1851803958415985,
+          "k_int4_rel_err": 0.0446351021528244,
+          "v_int2_rel_err": 0.6242482662200928,
+          "v_base2_rel_err": 0.5047620683908463,
+          "v_int4_rel_err": 0.12482555955648422
+        },
+        "17": {
+          "k_peak_over_rms": 17.74396049647545,
+          "v_peak_over_rms": 9.14278914894919,
+          "k_channel_max_over_median": 24.60653018951416,
+          "v_channel_max_over_median": 2.9984872341156006,
+          "k_int2_rel_err": 0.15439870953559875,
+          "k_base2_rel_err": 0.12693830579519272,
+          "k_int4_rel_err": 0.030607489868998528,
+          "v_int2_rel_err": 0.6026601493358612,
+          "v_base2_rel_err": 0.48365432024002075,
+          "v_int4_rel_err": 0.1197337917983532
+        },
+        "18": {
+          "k_peak_over_rms": 13.420968089993803,
+          "v_peak_over_rms": 8.398873945438957,
+          "k_channel_max_over_median": 7.518031120300293,
+          "v_channel_max_over_median": 2.852193236351013,
+          "k_int2_rel_err": 0.21737845987081528,
+          "k_base2_rel_err": 0.17850419878959656,
+          "k_int4_rel_err": 0.0431005097925663,
+          "v_int2_rel_err": 0.5948728919029236,
+          "v_base2_rel_err": 0.4777047485113144,
+          "v_int4_rel_err": 0.11812993139028549
+        },
+        "19": {
+          "k_peak_over_rms": 13.535349595796614,
+          "v_peak_over_rms": 7.739377126638354,
+          "k_channel_max_over_median": 10.356269359588623,
+          "v_channel_max_over_median": 2.786078691482544,
+          "k_int2_rel_err": 0.2047140970826149,
+          "k_base2_rel_err": 0.1685129553079605,
+          "k_int4_rel_err": 0.040642810985445976,
+          "v_int2_rel_err": 0.5649199485778809,
+          "v_base2_rel_err": 0.45457756519317627,
+          "v_int4_rel_err": 0.11250040680170059
+        },
+        "20": {
+          "k_peak_over_rms": 13.918943060457842,
+          "v_peak_over_rms": 9.310658973888101,
+          "k_channel_max_over_median": 12.787025451660156,
+          "v_channel_max_over_median": 2.522690773010254,
+          "k_int2_rel_err": 0.2231018766760826,
+          "k_base2_rel_err": 0.1833149418234825,
+          "k_int4_rel_err": 0.0441497266292572,
+          "v_int2_rel_err": 0.5652312338352203,
+          "v_base2_rel_err": 0.4546102285385132,
+          "v_int4_rel_err": 0.11262109875679016
+        },
+        "21": {
+          "k_peak_over_rms": 17.223804287009564,
+          "v_peak_over_rms": 9.887357028345287,
+          "k_channel_max_over_median": 14.948314666748047,
+          "v_channel_max_over_median": 2.5125449895858765,
+          "k_int2_rel_err": 0.20239712297916412,
+          "k_base2_rel_err": 0.16708410531282425,
+          "k_int4_rel_err": 0.04016523063182831,
+          "v_int2_rel_err": 0.5568858981132507,
+          "v_base2_rel_err": 0.4484955370426178,
+          "v_int4_rel_err": 0.1111304871737957
+        },
+        "22": {
+          "k_peak_over_rms": 10.79632842750957,
+          "v_peak_over_rms": 8.94387705864579,
+          "k_channel_max_over_median": 9.37999677658081,
+          "v_channel_max_over_median": 2.1216002702713013,
+          "k_int2_rel_err": 0.22632061690092087,
+          "k_base2_rel_err": 0.18695562332868576,
+          "k_int4_rel_err": 0.04497446492314339,
+          "v_int2_rel_err": 0.5291512310504913,
+          "v_base2_rel_err": 0.4257262200117111,
+          "v_int4_rel_err": 0.10550931096076965
+        },
+        "23": {
+          "k_peak_over_rms": 12.486479891053332,
+          "v_peak_over_rms": 9.99844934778777,
+          "k_channel_max_over_median": 11.51720142364502,
+          "v_channel_max_over_median": 2.651509165763855,
+          "k_int2_rel_err": 0.23405946046113968,
+          "k_base2_rel_err": 0.19311755150556564,
+          "k_int4_rel_err": 0.0464133583009243,
+          "v_int2_rel_err": 0.5413311421871185,
+          "v_base2_rel_err": 0.435570165514946,
+          "v_int4_rel_err": 0.10785839706659317
+        },
+        "24": {
+          "k_peak_over_rms": 13.877113378781335,
+          "v_peak_over_rms": 10.039535916704702,
+          "k_channel_max_over_median": 12.13807201385498,
+          "v_channel_max_over_median": 2.237565279006958,
+          "k_int2_rel_err": 0.24821753799915314,
+          "k_base2_rel_err": 0.20453707873821259,
+          "k_int4_rel_err": 0.04919138923287392,
+          "v_int2_rel_err": 0.5396393537521362,
+          "v_base2_rel_err": 0.43572597205638885,
+          "v_int4_rel_err": 0.10787489265203476
+        },
+        "25": {
+          "k_peak_over_rms": 13.209264007644675,
+          "v_peak_over_rms": 11.252122867282436,
+          "k_channel_max_over_median": 9.733081817626953,
+          "v_channel_max_over_median": 2.2503910064697266,
+          "k_int2_rel_err": 0.2571607381105423,
+          "k_base2_rel_err": 0.21200671792030334,
+          "k_int4_rel_err": 0.050940051674842834,
+          "v_int2_rel_err": 0.5306668281555176,
+          "v_base2_rel_err": 0.42758773267269135,
+          "v_int4_rel_err": 0.10596368089318275
+        },
+        "26": {
+          "k_peak_over_rms": 16.53030025231915,
+          "v_peak_over_rms": 12.36705229834028,
+          "k_channel_max_over_median": 8.725096225738525,
+          "v_channel_max_over_median": 2.137500286102295,
+          "k_int2_rel_err": 0.26194024085998535,
+          "k_base2_rel_err": 0.2164347916841507,
+          "k_int4_rel_err": 0.051973557099699974,
+          "v_int2_rel_err": 0.5266560614109039,
+          "v_base2_rel_err": 0.42418745160102844,
+          "v_int4_rel_err": 0.10509855672717094
+        },
+        "27": {
+          "k_peak_over_rms": 16.21554653122292,
+          "v_peak_over_rms": 17.571981140972564,
+          "k_channel_max_over_median": 25.212985038757324,
+          "v_channel_max_over_median": 2.768963932991028,
+          "k_int2_rel_err": 0.1554914265871048,
+          "k_base2_rel_err": 0.12769939750432968,
+          "k_int4_rel_err": 0.030799297615885735,
+          "v_int2_rel_err": 0.5437076687812805,
+          "v_base2_rel_err": 0.4390333592891693,
+          "v_int4_rel_err": 0.10877664387226105
+        }
+      },
+      "elapsed_sec": 37.180989899999986
+    }
+  }
+}

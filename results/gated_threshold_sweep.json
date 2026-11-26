@@ -1,0 +1,143 @@
+{
+  "Qwen3.5-0.8B": {
+    "fp16_ppl": 2.0349483489990234,
+    "configs": {
+      "tau_3.0_6.5": {
+        "tau_hot": 3.0,
+        "tau_skip": 6.5,
+        "mean_ppl": 2.02248078584671,
+        "delta_ppl": -0.012467563152313232,
+        "mean_kl": 0.002013068413361907,
+        "needle_hits": 5,
+        "needle_total": 5,
+        "hot_ratio": 0.49401148160298664,
+        "warm_ratio": 0.3948722903927167,
+        "skip_ratio": 0.11111628372843067,
+        "phys_read_bits": 6.976034580574681
+      },
+      "tau_3.5_7.5": {
+        "tau_hot": 3.5,
+        "tau_skip": 7.5,
+        "mean_ppl": 2.021832227706909,
+        "delta_ppl": -0.013116121292114258,
+        "mean_kl": 0.0021618613973259926,
+        "needle_hits": 5,
+        "needle_total": 5,
+        "hot_ratio": 0.5675998603304228,
+        "warm_ratio": 0.3695075027644634,
+        "skip_ratio": 0.06289269668438162,
+        "phys_read_bits": 7.378891187622988
+      },
+      "tau_4.0_8.5": {
+        "tau_hot": 4.0,
+        "tau_skip": 8.5,
+        "mean_ppl": 2.0224878787994385,
+        "delta_ppl": -0.012460470199584961,
+        "mean_kl": 0.002058472775388509,
+        "needle_hits": 5,
+        "needle_total": 5,
+        "hot_ratio": 0.6375661765535673,
+        "warm_ratio": 0.32782016694545746,
+        "skip_ratio": 0.03461371704906924,
+        "phys_read_bits": 7.722384160731356
+      },
+      "tau_4.5_9.5": {
+        "tau_hot": 4.5,
+        "tau_skip": 9.5,
+        "mean_ppl": 2.0210835933685303,
+        "delta_ppl": -0.013864755630493164,
+        "mean_kl": 0.0021576123544946313,
+        "needle_hits": 5,
+        "needle_total": 5,
+        "hot_ratio": 0.7029958715041479,
+        "warm_ratio": 0.2794363995393117,
+        "skip_ratio": 0.017567792297389435,
+        "phys_read_bits": 8.022456285886923
+      },
+      "tau_5.0_10.5": {
+        "tau_hot": 5.0,
+        "tau_skip": 10.5,
+        "mean_ppl": 2.0258856415748596,
+        "delta_ppl": -0.009062707424163818,
+        "mean_kl": 0.0021496055414900184,
+        "needle_hits": 5,
+        "needle_total": 5,
+        "hot_ratio": 0.7601170216997465,
+        "warm_ratio": 0.2318793535232544,
+        "skip_ratio": 0.008003679470372541,
+        "phys_read_bits": 8.272460095130858
+      }
+    }
+  },
+  "Qwen3-0.6B": {
+    "fp16_ppl": 2.4451072216033936,
+    "configs": {
+      "tau_3.0_6.5": {
+        "tau_hot": 3.0,
+        "tau_skip": 6.5,
+        "mean_ppl": 2.473077714443207,
+        "delta_ppl": 0.027970492839813232,
+        "mean_kl": 0.0033027527388185263,
+        "needle_hits": 5,
+        "needle_total": 5,
+        "hot_ratio": 0.15049083713841224,
+        "warm_ratio": 0.44659052549728323,
+        "skip_ratio": 0.4029186956052269,
+        "phys_read_bits": 4.945396589206731
+      },
+      "tau_3.5_7.5": {
+        "tau_hot": 3.5,
+        "tau_skip": 7.5,
+        "mean_ppl": 2.469266951084137,
+        "delta_ppl": 0.024159729480743408,
+        "mean_kl": 0.0032634304370731115,
+        "needle_hits": 5,
+        "needle_total": 5,
+        "hot_ratio": 0.195109061065263,
+        "warm_ratio": 0.5302203196500029,
+        "skip_ratio": 0.274670676594334,
+        "phys_read_bits": 5.4124275227992
+      },
+      "tau_4.0_8.5": {
+        "tau_hot": 4.0,
+        "tau_skip": 8.5,
+        "mean_ppl": 2.465321958065033,
+        "delta_ppl": 0.020214736461639404,
+        "mean_kl": 0.002813315484672785,
+        "needle_hits": 5,
+        "needle_total": 5,
+        "hot_ratio": 0.24885432375594974,
+        "warm_ratio": 0.5789025707968644,
+        "skip_ratio": 0.1722431580003883,
+        "phys_read_bits": 5.857870465427238
+      },
+      "tau_4.5_9.5": {
+        "tau_hot": 4.5,
+        "tau_skip": 9.5,
+        "mean_ppl": 2.467559516429901,
+        "delta_ppl": 0.02245229482650757,
+        "mean_kl": 0.0027239281916990876,
+        "needle_hits": 5,
+        "needle_total": 5,
+        "hot_ratio": 0.309798694348761,
+        "warm_ratio": 0.5896508512752396,
+        "skip_ratio": 0.10055051235082958,
+        "phys_read_bits": 6.262956428973537
+      },
+      "tau_5.0_10.5": {
+        "tau_hot": 5.0,
+        "tau_skip": 10.5,
+        "mean_ppl": 2.468644857406616,
+        "delta_ppl": 0.023537635803222656,
+        "mean_kl": 0.002613274729810655,
+        "needle_hits": 5,
+        "needle_total": 5,
+        "hot_ratio": 0.3766918435160603,
+        "warm_ratio": 0.5665864827377456,
+        "skip_ratio": 0.05672173180417823,
+        "phys_read_bits": 6.6291437823092565
+      }
+    }
+  },
+  "elapsed_sec": 39.99549719999777
+}

@@ -1,0 +1,1284 @@
+{
+  "hardware": {
+    "gpu": "NVIDIA GeForce RTX 5070 Ti",
+    "total_vram_gb": 15.89398193359375,
+    "sm_count": 70,
+    "torch": "2.9.1+cu128",
+    "cuda_capability": "sm_120"
+  },
+  "latency": {
+    "qwen3_d128": {
+      "meta": {
+        "name": "qwen3_d128",
+        "label": "Qwen3/Llama-3 GQA (H_q=32, H_kv=8, d=128)",
+        "h_q": 32,
+        "h_kv": 8,
+        "d": 128
+      },
+      "by_batch": {
+        "B=1": {
+          "2048": {
+            "seq_len": 2048,
+            "latency_ms": {
+              "pytorch_sdpa": 0.1821036720275879,
+              "triton_fp16": 0.055849280357360837,
+              "triton_int4": 0.08649855613708496,
+              "bitplane_twopass": 0.14280223846435547,
+              "bitplane_gated": 0.09269696235656738,
+              "bitplane_dualstream_15_85": 0.16053855895996094,
+              "bitplane_dualstream_15_35": 0.15718815803527833
+            },
+            "speedup_dual35_vs_sdpa": 1.1585075765485953,
+            "speedup_dual35_vs_fp16": 0.3553020854460701,
+            "speedup_dual35_vs_int4": 0.5502867214569164,
+            "speedup_dual85_vs_int4": 0.5388023705797564,
+            "gated_stats": {
+              "hot_ratio": 1.0,
+              "warm_ratio": 0.0,
+              "skip_ratio": 0.0,
+              "phys_read_bits": 9.25,
+              "num_splits": 31
+            },
+            "dualstream_15_85_stats": {
+              "hot_ratio": 0.15873015873015872,
+              "warm_ratio": 0.8412698412698413,
+              "skip_ratio": 0.0,
+              "phys_read_bits": 6.884920634920635,
+              "num_splits_hot": 5,
+              "num_splits_warm": 6
+            },
+            "dualstream_15_35_stats": {
+              "hot_ratio": 0.15873015873015872,
+              "warm_ratio": 0.36507936507936506,
+              "skip_ratio": 0.4761904761904762,
+              "phys_read_bits": 4.384920634920634,
+              "num_splits_hot": 5,
+              "num_splits_warm": 11
+            },
+            "memory_mb": {
+              "fp16_equiv": 8.0,
+              "packed_total": 2.4013671875,
+              "compression_ratio": 3.3314355429036193,
+              "effective_bits_stored_total": 4.802734375
+            }
+          },
+          "4096": {
+            "seq_len": 4096,
+            "latency_ms": {
+              "pytorch_sdpa": 0.3706224060058594,
+              "triton_fp16": 0.05447711944580078,
+              "triton_int4": 0.08684415817260742,
+              "bitplane_twopass": 0.13967103958129884,
+              "bitplane_gated": 0.09223584175109863,
+              "bitplane_dualstream_15_85": 0.16187168121337892,
+              "bitplane_dualstream_15_35": 0.15825984001159668
+            },
+            "speedup_dual35_vs_sdpa": 2.3418601079004095,
+            "speedup_dual35_vs_fp16": 0.3442257962715551,
+            "speedup_dual35_vs_int4": 0.5487441296935711,
+            "speedup_dual85_vs_int4": 0.5365000074233468,
+            "gated_stats": {
+              "hot_ratio": 1.0,
+              "warm_ratio": 0.0,
+              "skip_ratio": 0.0,
+              "phys_read_bits": 9.25,
+              "num_splits": 15
+            },
+            "dualstream_15_85_stats": {
+              "hot_ratio": 0.15748031496062992,
+              "warm_ratio": 0.84251968503937,
+              "skip_ratio": 1.1102230246251565e-16,
+              "phys_read_bits": 6.8799212598425195,
+              "num_splits_hot": 10,
+              "num_splits_warm": 13
+            },
+            "dualstream_15_35_stats": {
+              "hot_ratio": 0.15748031496062992,
+              "warm_ratio": 0.3543307086614173,
+              "skip_ratio": 0.48818897637795283,
+              "phys_read_bits": 4.316929133858268,
+              "num_splits_hot": 10,
+              "num_splits_warm": 5
+            },
+            "memory_mb": {
+              "fp16_equiv": 16.0,
+              "packed_total": 4.7138671875,
+              "compression_ratio": 3.3942407292314067,
+              "effective_bits_stored_total": 4.7138671875
+            }
+          },
+          "8192": {
+            "seq_len": 8192,
+            "latency_ms": {
+              "pytorch_sdpa": 0.7372621154785156,
+              "triton_fp16": 0.05513088226318359,
+              "triton_int4": 0.08556256294250489,
+              "bitplane_twopass": 0.1450492763519287,
+              "bitplane_gated": 0.09063615798950195,
+              "bitplane_dualstream_15_85": 0.15904031753540038,
+              "bitplane_dualstream_15_35": 0.15959712028503417
+            },
+            "speedup_dual35_vs_sdpa": 4.619520165287409,
+            "speedup_dual35_vs_fp16": 0.3454378259753184,
+            "speedup_dual35_vs_int4": 0.5361159574163589,
+            "speedup_dual85_vs_int4": 0.537992908140791,
+            "gated_stats": {
+              "hot_ratio": 1.0,
+              "warm_ratio": 0.0,
+              "skip_ratio": 0.0,
+              "phys_read_bits": 9.25,
+              "num_splits": 31
+            },
+            "dualstream_15_85_stats": {
+              "hot_ratio": 0.15294117647058825,
+              "warm_ratio": 0.8470588235294118,
+              "skip_ratio": 0.0,
+              "phys_read_bits": 6.861764705882353,
+              "num_splits_hot": 4,
+              "num_splits_warm": 27
+            },
+            "dualstream_15_35_stats": {
+              "hot_ratio": 0.15294117647058825,
+              "warm_ratio": 0.35294117647058826,
+              "skip_ratio": 0.4941176470588235,
+              "phys_read_bits": 4.267647058823529,
+              "num_splits_hot": 4,
+              "num_splits_warm": 11
+            },
+            "memory_mb": {
+              "fp16_equiv": 32.0,
+              "packed_total": 9.3388671875,
+              "compression_ratio": 3.426539788769215,
+              "effective_bits_stored_total": 4.66943359375
+            }
+          },
+          "16384": {
+            "seq_len": 16384,
+            "latency_ms": {
+              "pytorch_sdpa": 1.5390269470214843,
+              "triton_fp16": 0.10145183563232422,
+              "triton_int4": 0.08911968231201171,
+              "bitplane_twopass": 0.14813664436340332,
+              "bitplane_gated": 0.09146880149841309,
+              "bitplane_dualstream_15_85": 0.18862655639648437,
+              "bitplane_dualstream_15_35": 0.16618783950805663
+            },
+            "speedup_dual35_vs_sdpa": 9.260767524129669,
+            "speedup_dual35_vs_fp16": 0.6104648567105654,
+            "speedup_dual35_vs_int4": 0.5362587453800509,
+            "speedup_dual85_vs_int4": 0.47246625297387196,
+            "gated_stats": {
+              "hot_ratio": 1.0,
+              "warm_ratio": 0.0,
+              "skip_ratio": 0.0,
+              "phys_read_bits": 9.25,
+              "num_splits": 63
+            },
+            "dualstream_15_85_stats": {
+              "hot_ratio": 0.1506849315068493,
+              "warm_ratio": 0.8493150684931506,
+              "skip_ratio": 1.1102230246251565e-16,
+              "phys_read_bits": 6.852739726027396,
+              "num_splits_hot": 9,
+              "num_splits_warm": 48
+            },
+            "dualstream_15_35_stats": {
+              "hot_ratio": 0.1506849315068493,
+              "warm_ratio": 0.350293542074364,
+              "skip_ratio": 0.4990215264187868,
+              "phys_read_bits": 4.232876712328767,
+              "num_splits_hot": 9,
+              "num_splits_warm": 22
+            },
+            "memory_mb": {
+              "fp16_equiv": 64.0,
+              "packed_total": 18.5888671875,
+              "compression_ratio": 3.4429209351195165,
+              "effective_bits_stored_total": 4.647216796875
+            }
+          },
+          "32768": {
+            "seq_len": 32768,
+            "latency_ms": {
+              "pytorch_sdpa": 2.988587188720703,
+              "triton_fp16": 0.18358880678812664,
+              "triton_int4": 0.09624586900075277,
+              "bitplane_twopass": 0.19602133433024088,
+              "bitplane_gated": 0.1407573382059733,
+              "bitplane_dualstream_15_85": 0.1638389269510905,
+              "bitplane_dualstream_15_35": 0.15925386746724446
+            },
+            "speedup_dual35_vs_sdpa": 18.76618280140292,
+            "speedup_dual35_vs_fp16": 1.1528059550948577,
+            "speedup_dual35_vs_int4": 0.6043549869867288,
+            "speedup_dual85_vs_int4": 0.5874420126633536,
+            "gated_stats": {
+              "hot_ratio": 1.0,
+              "warm_ratio": 0.0,
+              "skip_ratio": 0.0,
+              "phys_read_bits": 9.25,
+              "num_splits": 64
+            },
+            "dualstream_15_85_stats": {
+              "hot_ratio": 0.15053763440860216,
+              "warm_ratio": 0.8494623655913979,
+              "skip_ratio": 0.0,
+              "phys_read_bits": 6.852150537634409,
+              "num_splits_hot": 19,
+              "num_splits_warm": 48
+            },
+            "dualstream_15_35_stats": {
+              "hot_ratio": 0.15053763440860216,
+              "warm_ratio": 0.3509286412512219,
+              "skip_ratio": 0.49853372434017595,
+              "phys_read_bits": 4.234848484848485,
+              "num_splits_hot": 19,
+              "num_splits_warm": 44
+            },
+            "memory_mb": {
+              "fp16_equiv": 128.0,
+              "packed_total": 37.0888671875,
+              "compression_ratio": 3.4511703836330603,
+              "effective_bits_stored_total": 4.6361083984375
+            }
+          },
+          "65536": {
+            "seq_len": 65536,
+            "latency_ms": {
+              "pytorch_sdpa": 5.949300130208333,
+              "triton_fp16": 0.33709761301676433,
+              "triton_int4": 0.18238879839579264,
+              "bitplane_twopass": 0.3762410799662272,
+              "bitplane_gated": 0.333787727355957,
+              "bitplane_dualstream_15_85": 0.23008693059285482,
+              "bitplane_dualstream_15_35": 0.1632725397745768
+            },
+            "speedup_dual35_vs_sdpa": 36.437848877847244,
+            "speedup_dual35_vs_fp16": 2.064631403922424,
+            "speedup_dual35_vs_int4": 1.1170818966104699,
+            "speedup_dual85_vs_int4": 0.7926951692816254,
+            "gated_stats": {
+              "hot_ratio": 1.0,
+              "warm_ratio": 0.0,
+              "skip_ratio": 0.0,
+              "phys_read_bits": 9.25,
+              "num_splits": 64
+            },
+            "dualstream_15_85_stats": {
+              "hot_ratio": 0.15046409379579873,
+              "warm_ratio": 0.8495359062042013,
+              "skip_ratio": 0.0,
+              "phys_read_bits": 6.8518563751831945,
+              "num_splits_hot": 38,
+              "num_splits_warm": 48
+            },
+            "dualstream_15_35_stats": {
+              "hot_ratio": 0.15046409379579873,
+              "warm_ratio": 0.35026868588177823,
+              "skip_ratio": 0.49926722032242304,
+              "phys_read_bits": 4.230703468490474,
+              "num_splits_hot": 38,
+              "num_splits_warm": 48
+            },
+            "memory_mb": {
+              "fp16_equiv": 256.0,
+              "packed_total": 74.0888671875,
+              "compression_ratio": 3.4553099503077753,
+              "effective_bits_stored_total": 4.63055419921875
+            }
+          }
+        },
+        "B=4": {
+          "2048": {
+            "seq_len": 2048,
+            "latency_ms": {
+              "pytorch_sdpa": 0.5152841567993164,
+              "triton_fp16": 0.08153856277465821,
+              "triton_int4": 0.1157532787322998,
+              "bitplane_twopass": 0.15415040016174317,
+              "bitplane_gated": 0.09721823692321778,
+              "bitplane_dualstream_15_85": 0.1564476776123047,
+              "bitplane_dualstream_15_35": 0.15743295669555665
+            },
+            "speedup_dual35_vs_sdpa": 3.273038680177818,
+            "speedup_dual35_vs_fp16": 0.5179256267945042,
+            "speedup_dual35_vs_int4": 0.7352544293260218,
+            "speedup_dual85_vs_int4": 0.7398849282962814,
+            "gated_stats": {
+              "hot_ratio": 1.0,
+              "warm_ratio": 0.0,
+              "skip_ratio": 0.0,
+              "phys_read_bits": 9.25,
+              "num_splits": 16
+            },
+            "dualstream_15_85_stats": {
+              "hot_ratio": 0.15873015873015872,
+              "warm_ratio": 0.8412698412698413,
+              "skip_ratio": 0.0,
+              "phys_read_bits": 6.884920634920635,
+              "num_splits_hot": 5,
+              "num_splits_warm": 6
+            },
+            "dualstream_15_35_stats": {
+              "hot_ratio": 0.15873015873015872,
+              "warm_ratio": 0.36507936507936506,
+              "skip_ratio": 0.4761904761904762,
+              "phys_read_bits": 4.384920634920634,
+              "num_splits_hot": 5,
+              "num_splits_warm": 8
+            },
+            "memory_mb": {
+              "fp16_equiv": 32.0,
+              "packed_total": 9.60546875,
+              "compression_ratio": 3.3314355429036193,
+              "effective_bits_stored_total": 4.802734375
+            }
+          },
+          "4096": {
+            "seq_len": 4096,
+            "latency_ms": {
+              "pytorch_sdpa": 1.0011100769042969,
+              "triton_fp16": 0.0921452808380127,
+              "triton_int4": 0.08995871543884278,
+              "bitplane_twopass": 0.14889951705932616,
+              "bitplane_gated": 0.09363679885864258,
+              "bitplane_dualstream_15_85": 0.1972230339050293,
+              "bitplane_dualstream_15_35": 0.21246559143066407
+            },
+            "speedup_dual35_vs_sdpa": 4.711869202740994,
+            "speedup_dual35_vs_fp16": 0.4336950760710981,
+            "speedup_dual35_vs_int4": 0.4234036901368091,
+            "speedup_dual85_vs_int4": 0.45612682077571864,
+            "gated_stats": {
+              "hot_ratio": 1.0,
+              "warm_ratio": 0.0,
+              "skip_ratio": 0.0,
+              "phys_read_bits": 9.25,
+              "num_splits": 15
+            },
+            "dualstream_15_85_stats": {
+              "hot_ratio": 0.15748031496062992,
+              "warm_ratio": 0.84251968503937,
+              "skip_ratio": 1.1102230246251565e-16,
+              "phys_read_bits": 6.8799212598425195,
+              "num_splits_hot": 8,
+              "num_splits_warm": 8
+            },
+            "dualstream_15_35_stats": {
+              "hot_ratio": 0.15748031496062992,
+              "warm_ratio": 0.3543307086614173,
+              "skip_ratio": 0.48818897637795283,
+              "phys_read_bits": 4.316929133858268,
+              "num_splits_hot": 8,
+              "num_splits_warm": 5
+            },
+            "memory_mb": {
+              "fp16_equiv": 64.0,
+              "packed_total": 18.85546875,
+              "compression_ratio": 3.3942407292314067,
+              "effective_bits_stored_total": 4.7138671875
+            }
+          },
+          "8192": {
+            "seq_len": 8192,
+            "latency_ms": {
+              "pytorch_sdpa": 2.0253602600097658,
+              "triton_fp16": 0.17201536178588867,
+              "triton_int4": 0.10482848167419434,
+              "bitplane_twopass": 0.164334716796875,
+              "bitplane_gated": 0.13060128211975097,
+              "bitplane_dualstream_15_85": 0.16172447204589843,
+              "bitplane_dualstream_15_35": 0.15749919891357422
+            },
+            "speedup_dual35_vs_sdpa": 12.859495629061312,
+            "speedup_dual35_vs_fp16": 1.0921665822584914,
+            "speedup_dual35_vs_int4": 0.6655810467437215,
+            "speedup_dual85_vs_int4": 0.648191831131428,
+            "gated_stats": {
+              "hot_ratio": 1.0,
+              "warm_ratio": 0.0,
+              "skip_ratio": 0.0,
+              "phys_read_bits": 9.25,
+              "num_splits": 16
+            },
+            "dualstream_15_85_stats": {
+              "hot_ratio": 0.15294117647058825,
+              "warm_ratio": 0.8470588235294118,
+              "skip_ratio": 0.0,
+              "phys_read_bits": 6.861764705882353,
+              "num_splits_hot": 4,
+              "num_splits_warm": 17
+            },
+            "dualstream_15_35_stats": {
+              "hot_ratio": 0.15294117647058825,
+              "warm_ratio": 0.35294117647058826,
+              "skip_ratio": 0.4941176470588235,
+              "phys_read_bits": 4.267647058823529,
+              "num_splits_hot": 4,
+              "num_splits_warm": 8
+            },
+            "memory_mb": {
+              "fp16_equiv": 128.0,
+              "packed_total": 37.35546875,
+              "compression_ratio": 3.426539788769215,
+              "effective_bits_stored_total": 4.66943359375
+            }
+          },
+          "16384": {
+            "seq_len": 16384,
+            "latency_ms": {
+              "pytorch_sdpa": 3.909115905761719,
+              "triton_fp16": 0.34121856689453123,
+              "triton_int4": 0.18080095291137696,
+              "bitplane_twopass": 0.33767520904541015,
+              "bitplane_gated": 0.3295683288574219,
+              "bitplane_dualstream_15_85": 0.19844480514526366,
+              "bitplane_dualstream_15_35": 0.15901311874389648
+            },
+            "speedup_dual35_vs_sdpa": 24.583606287589813,
+            "speedup_dual35_vs_fp16": 2.145851673056557,
+            "speedup_dual35_vs_int4": 1.1370190984215054,
+            "speedup_dual85_vs_int4": 0.911089372075166,
+            "gated_stats": {
+              "hot_ratio": 1.0,
+              "warm_ratio": 0.0,
+              "skip_ratio": 0.0,
+              "phys_read_bits": 9.25,
+              "num_splits": 16
+            },
+            "dualstream_15_85_stats": {
+              "hot_ratio": 0.1506849315068493,
+              "warm_ratio": 0.8493150684931506,
+              "skip_ratio": 1.1102230246251565e-16,
+              "phys_read_bits": 6.852739726027396,
+              "num_splits_hot": 8,
+              "num_splits_warm": 17
+            },
+            "dualstream_15_35_stats": {
+              "hot_ratio": 0.1506849315068493,
+              "warm_ratio": 0.350293542074364,
+              "skip_ratio": 0.4990215264187868,
+              "phys_read_bits": 4.232876712328767,
+              "num_splits_hot": 8,
+              "num_splits_warm": 17
+            },
+            "memory_mb": {
+              "fp16_equiv": 256.0,
+              "packed_total": 74.35546875,
+              "compression_ratio": 3.4429209351195165,
+              "effective_bits_stored_total": 4.647216796875
+            }
+          },
+          "32768": {
+            "seq_len": 32768,
+            "latency_ms": {
+              "pytorch_sdpa": 8.295667012532553,
+              "triton_fp16": 0.6694639841715495,
+              "triton_int4": 0.34806187947591144,
+              "bitplane_twopass": 0.7020026524861653,
+              "bitplane_gated": 0.6412368138631185,
+              "bitplane_dualstream_15_85": 0.3737039883931478,
+              "bitplane_dualstream_15_35": 0.23035999933878581
+            },
+            "speedup_dual35_vs_sdpa": 36.011751329849076,
+            "speedup_dual35_vs_fp16": 2.9061642042591878,
+            "speedup_dual35_vs_int4": 1.5109475624022026,
+            "speedup_dual85_vs_int4": 0.9313839035342056,
+            "gated_stats": {
+              "hot_ratio": 1.0,
+              "warm_ratio": 0.0,
+              "skip_ratio": 0.0,
+              "phys_read_bits": 9.25,
+              "num_splits": 16
+            },
+            "dualstream_15_85_stats": {
+              "hot_ratio": 0.15053763440860216,
+              "warm_ratio": 0.8494623655913979,
+              "skip_ratio": 0.0,
+              "phys_read_bits": 6.852150537634409,
+              "num_splits_hot": 17,
+              "num_splits_warm": 17
+            },
+            "dualstream_15_35_stats": {
+              "hot_ratio": 0.15053763440860216,
+              "warm_ratio": 0.3509286412512219,
+              "skip_ratio": 0.49853372434017595,
+              "phys_read_bits": 4.234848484848485,
+              "num_splits_hot": 17,
+              "num_splits_warm": 17
+            },
+            "memory_mb": {
+              "fp16_equiv": 512.0,
+              "packed_total": 148.35546875,
+              "compression_ratio": 3.4511703836330603,
+              "effective_bits_stored_total": 4.6361083984375
+            }
+          },
+          "65536": {
+            "seq_len": 65536,
+            "latency_ms": {
+              "pytorch_sdpa": 15.948312377929687,
+              "triton_fp16": 1.317027791341146,
+              "triton_int4": 0.661527442932129,
+              "bitplane_twopass": 1.3382101694742838,
+              "bitplane_gated": 1.2752901713053386,
+              "bitplane_dualstream_15_85": 0.7099045435587565,
+              "bitplane_dualstream_15_35": 0.4332661310831706
+            },
+            "speedup_dual35_vs_sdpa": 36.8095062913381,
+            "speedup_dual35_vs_fp16": 3.0397663164867295,
+            "speedup_dual35_vs_int4": 1.526838576738741,
+            "speedup_dual85_vs_int4": 0.9318540766282283,
+            "gated_stats": {
+              "hot_ratio": 0.9798333048820496,
+              "warm_ratio": 0.020166708156466484,
+              "skip_ratio": 0.0,
+              "phys_read_bits": 9.169333287980407,
+              "num_splits": 16
+            },
+            "dualstream_15_85_stats": {
+              "hot_ratio": 0.15046409379579873,
+              "warm_ratio": 0.8495359062042013,
+              "skip_ratio": 0.0,
+              "phys_read_bits": 6.8518563751831945,
+              "num_splits_hot": 17,
+              "num_splits_warm": 17
+            },
+            "dualstream_15_35_stats": {
+              "hot_ratio": 0.15046409379579873,
+              "warm_ratio": 0.35026868588177823,
+              "skip_ratio": 0.49926722032242304,
+              "phys_read_bits": 4.230703468490474,
+              "num_splits_hot": 17,
+              "num_splits_warm": 17
+            },
+            "memory_mb": {
+              "fp16_equiv": 1024.0,
+              "packed_total": 296.35546875,
+              "compression_ratio": 3.4553099503077753,
+              "effective_bits_stored_total": 4.63055419921875
+            }
+          }
+        }
+      }
+    },
+    "qwen35_d256": {
+      "meta": {
+        "name": "qwen35_d256",
+        "label": "Qwen3.5 Hybrid Global (H_q=16, H_kv=4, d=256)",
+        "h_q": 16,
+        "h_kv": 4,
+        "d": 256
+      },
+      "by_batch": {
+        "B=1": {
+          "2048": {
+            "seq_len": 2048,
+            "latency_ms": {
+              "pytorch_sdpa": 0.2310054397583008,
+              "triton_fp16": 0.0599132776260376,
+              "triton_int4": 0.09425248146057129,
+              "bitplane_twopass": 0.17418176651000977,
+              "bitplane_gated": 0.09456735610961914,
+              "bitplane_dualstream_15_85": 0.1653455924987793,
+              "bitplane_dualstream_15_35": 0.16927391052246094
+            },
+            "speedup_dual35_vs_sdpa": 1.3646842507820998,
+            "speedup_dual35_vs_fp16": 0.3539427750036395,
+            "speedup_dual35_vs_int4": 0.5568045375076565,
+            "speedup_dual85_vs_int4": 0.5700332257799199,
+            "gated_stats": {
+              "hot_ratio": 0.9841270446777344,
+              "warm_ratio": 0.01587301678955555,
+              "skip_ratio": 0.0,
+              "phys_read_bits": 9.18650850141421,
+              "num_splits": 31
+            },
+            "dualstream_15_85_stats": {
+              "hot_ratio": 0.15873015873015872,
+              "warm_ratio": 0.8412698412698413,
+              "skip_ratio": 0.0,
+              "phys_read_bits": 6.884920634920635,
+              "num_splits_hot": 5,
+              "num_splits_warm": 6
+            },
+            "dualstream_15_35_stats": {
+              "hot_ratio": 0.15873015873015872,
+              "warm_ratio": 0.36507936507936506,
+              "skip_ratio": 0.4761904761904762,
+              "phys_read_bits": 4.384920634920634,
+              "num_splits_hot": 5,
+              "num_splits_warm": 11
+            },
+            "memory_mb": {
+              "fp16_equiv": 8.0,
+              "packed_total": 2.37060546875,
+              "compression_ratio": 3.3746652935118435,
+              "effective_bits_stored_total": 4.7412109375
+            }
+          },
+          "4096": {
+            "seq_len": 4096,
+            "latency_ms": {
+              "pytorch_sdpa": 0.41763519287109374,
+              "triton_fp16": 0.060793919563293455,
+              "triton_int4": 0.0938640022277832,
+              "bitplane_twopass": 0.16339487075805664,
+              "bitplane_gated": 0.09768095970153809,
+              "bitplane_dualstream_15_85": 0.16043487548828125,
+              "bitplane_dualstream_15_35": 0.16046688079833984
+            },
+            "speedup_dual35_vs_sdpa": 2.602625481303769,
+            "speedup_dual35_vs_fp16": 0.3788564921361793,
+            "speedup_dual35_vs_int4": 0.5849431469023376,
+            "speedup_dual85_vs_int4": 0.5850598377822119,
+            "gated_stats": {
+              "hot_ratio": 1.0,
+              "warm_ratio": 0.0,
+              "skip_ratio": 0.0,
+              "phys_read_bits": 9.25,
+              "num_splits": 15
+            },
+            "dualstream_15_85_stats": {
+              "hot_ratio": 0.15748031496062992,
+              "warm_ratio": 0.84251968503937,
+              "skip_ratio": 1.1102230246251565e-16,
+              "phys_read_bits": 6.8799212598425195,
+              "num_splits_hot": 10,
+              "num_splits_warm": 13
+            },
+            "dualstream_15_35_stats": {
+              "hot_ratio": 0.15748031496062992,
+              "warm_ratio": 0.3543307086614173,
+              "skip_ratio": 0.48818897637795283,
+              "phys_read_bits": 4.316929133858268,
+              "num_splits_hot": 10,
+              "num_splits_warm": 5
+            },
+            "memory_mb": {
+              "fp16_equiv": 16.0,
+              "packed_total": 4.65185546875,
+              "compression_ratio": 3.4394877715965153,
+              "effective_bits_stored_total": 4.65185546875
+            }
+          },
+          "8192": {
+            "seq_len": 8192,
+            "latency_ms": {
+              "pytorch_sdpa": 0.8620697784423829,
+              "triton_fp16": 0.06104447841644287,
+              "triton_int4": 0.09039360046386719,
+              "bitplane_twopass": 0.14972127914428712,
+              "bitplane_gated": 0.09855968475341798,
+              "bitplane_dualstream_15_85": 0.17636159896850587,
+              "bitplane_dualstream_15_35": 0.1666659164428711
+            },
+            "speedup_dual35_vs_sdpa": 5.172441953588506,
+            "speedup_dual35_vs_fp16": 0.36626851919880926,
+            "speedup_dual35_vs_int4": 0.5423640441496738,
+            "speedup_dual85_vs_int4": 0.5125469546236616,
+            "gated_stats": {
+              "hot_ratio": 1.0,
+              "warm_ratio": 0.0,
+              "skip_ratio": 0.0,
+              "phys_read_bits": 9.25,
+              "num_splits": 31
+            },
+            "dualstream_15_85_stats": {
+              "hot_ratio": 0.15294117647058825,
+              "warm_ratio": 0.8470588235294118,
+              "skip_ratio": 0.0,
+              "phys_read_bits": 6.861764705882353,
+              "num_splits_hot": 4,
+              "num_splits_warm": 27
+            },
+            "dualstream_15_35_stats": {
+              "hot_ratio": 0.15294117647058825,
+              "warm_ratio": 0.35294117647058826,
+              "skip_ratio": 0.4941176470588235,
+              "phys_read_bits": 4.267647058823529,
+              "num_splits_hot": 4,
+              "num_splits_warm": 11
+            },
+            "memory_mb": {
+              "fp16_equiv": 32.0,
+              "packed_total": 9.21435546875,
+              "compression_ratio": 3.472841926765937,
+              "effective_bits_stored_total": 4.607177734375
+            }
+          },
+          "16384": {
+            "seq_len": 16384,
+            "latency_ms": {
+              "pytorch_sdpa": 1.7055686950683593,
+              "triton_fp16": 0.10020319938659668,
+              "triton_int4": 0.08362624168395996,
+              "bitplane_twopass": 0.14943455696105956,
+              "bitplane_gated": 0.09091072082519532,
+              "bitplane_dualstream_15_85": 0.15996800422668456,
+              "bitplane_dualstream_15_35": 0.15853919982910156
+            },
+            "speedup_dual35_vs_sdpa": 10.758025125059852,
+            "speedup_dual35_vs_fp16": 0.6320405268514754,
+            "speedup_dual35_vs_int4": 0.5274799025988869,
+            "speedup_dual85_vs_int4": 0.5227685504249737,
+            "gated_stats": {
+              "hot_ratio": 1.0,
+              "warm_ratio": 0.0,
+              "skip_ratio": 0.0,
+              "phys_read_bits": 9.25,
+              "num_splits": 63
+            },
+            "dualstream_15_85_stats": {
+              "hot_ratio": 0.1506849315068493,
+              "warm_ratio": 0.8493150684931506,
+              "skip_ratio": 1.1102230246251565e-16,
+              "phys_read_bits": 6.852739726027396,
+              "num_splits_hot": 9,
+              "num_splits_warm": 48
+            },
+            "dualstream_15_35_stats": {
+              "hot_ratio": 0.1506849315068493,
+              "warm_ratio": 0.350293542074364,
+              "skip_ratio": 0.4990215264187868,
+              "phys_read_bits": 4.232876712328767,
+              "num_splits_hot": 9,
+              "num_splits_warm": 22
+            },
+            "memory_mb": {
+              "fp16_equiv": 64.0,
+              "packed_total": 18.33935546875,
+              "compression_ratio": 3.489762773236774,
+              "effective_bits_stored_total": 4.5848388671875
+            }
+          },
+          "32768": {
+            "seq_len": 32768,
+            "latency_ms": {
+              "pytorch_sdpa": 3.1064132690429687,
+              "triton_fp16": 0.1772666613260905,
+              "triton_int4": 0.09790133635203044,
+              "bitplane_twopass": 0.15438186327616374,
+              "bitplane_gated": 0.12541653315226237,
+              "bitplane_dualstream_15_85": 0.15996640523274738,
+              "bitplane_dualstream_15_35": 0.15773439407348633
+            },
+            "speedup_dual35_vs_sdpa": 19.69394999289586,
+            "speedup_dual35_vs_fp16": 1.123830109262691,
+            "speedup_dual35_vs_int4": 0.6206720920132328,
+            "speedup_dual85_vs_int4": 0.6120118546740253,
+            "gated_stats": {
+              "hot_ratio": 1.0,
+              "warm_ratio": 0.0,
+              "skip_ratio": 0.0,
+              "phys_read_bits": 9.25,
+              "num_splits": 64
+            },
+            "dualstream_15_85_stats": {
+              "hot_ratio": 0.15053763440860216,
+              "warm_ratio": 0.8494623655913979,
+              "skip_ratio": 0.0,
+              "phys_read_bits": 6.852150537634409,
+              "num_splits_hot": 19,
+              "num_splits_warm": 48
+            },
+            "dualstream_15_35_stats": {
+              "hot_ratio": 0.15053763440860216,
+              "warm_ratio": 0.3509286412512219,
+              "skip_ratio": 0.49853372434017595,
+              "phys_read_bits": 4.234848484848485,
+              "num_splits_hot": 19,
+              "num_splits_warm": 44
+            },
+            "memory_mb": {
+              "fp16_equiv": 128.0,
+              "packed_total": 36.58935546875,
+              "compression_ratio": 3.498285180489758,
+              "effective_bits_stored_total": 4.57366943359375
+            }
+          },
+          "65536": {
+            "seq_len": 65536,
+            "latency_ms": {
+              "pytorch_sdpa": 7.563502502441406,
+              "triton_fp16": 0.3534330685933431,
+              "triton_int4": 0.19836692810058593,
+              "bitplane_twopass": 0.29357706705729164,
+              "bitplane_gated": 0.3006352106730143,
+              "bitplane_dualstream_15_85": 0.26970933278401693,
+              "bitplane_dualstream_15_35": 0.17371625900268556
+            },
+            "speedup_dual35_vs_sdpa": 43.539404692824284,
+            "speedup_dual35_vs_fp16": 2.0345422508084243,
+            "speedup_dual35_vs_int4": 1.1419019108483062,
+            "speedup_dual85_vs_int4": 0.7354841082174862,
+            "gated_stats": {
+              "hot_ratio": 1.0,
+              "warm_ratio": 0.0,
+              "skip_ratio": 0.0,
+              "phys_read_bits": 9.25,
+              "num_splits": 64
+            },
+            "dualstream_15_85_stats": {
+              "hot_ratio": 0.15046409379579873,
+              "warm_ratio": 0.8495359062042013,
+              "skip_ratio": 0.0,
+              "phys_read_bits": 6.8518563751831945,
+              "num_splits_hot": 38,
+              "num_splits_warm": 48
+            },
+            "dualstream_15_35_stats": {
+              "hot_ratio": 0.15046409379579873,
+              "warm_ratio": 0.35026868588177823,
+              "skip_ratio": 0.49926722032242304,
+              "phys_read_bits": 4.230703468490474,
+              "num_splits_hot": 38,
+              "num_splits_warm": 48
+            },
+            "memory_mb": {
+              "fp16_equiv": 256.0,
+              "packed_total": 73.08935546875,
+              "compression_ratio": 3.502562012733237,
+              "effective_bits_stored_total": 4.568084716796875
+            }
+          }
+        },
+        "B=4": {
+          "2048": {
+            "seq_len": 2048,
+            "latency_ms": {
+              "pytorch_sdpa": 0.43196224212646483,
+              "triton_fp16": 0.056681280136108396,
+              "triton_int4": 0.09188991546630859,
+              "bitplane_twopass": 0.15209983825683593,
+              "bitplane_gated": 0.0955884838104248,
+              "bitplane_dualstream_15_85": 0.1618953514099121,
+              "bitplane_dualstream_15_35": 0.16228895187377929
+            },
+            "speedup_dual35_vs_sdpa": 2.661686067591494,
+            "speedup_dual35_vs_fp16": 0.3492614838020054,
+            "speedup_dual35_vs_int4": 0.5662117747718048,
+            "speedup_dual85_vs_int4": 0.5675883505366826,
+            "gated_stats": {
+              "hot_ratio": 1.0,
+              "warm_ratio": 0.0,
+              "skip_ratio": 0.0,
+              "phys_read_bits": 9.25,
+              "num_splits": 31
+            },
+            "dualstream_15_85_stats": {
+              "hot_ratio": 0.15873015873015872,
+              "warm_ratio": 0.8412698412698413,
+              "skip_ratio": 0.0,
+              "phys_read_bits": 6.884920634920635,
+              "num_splits_hot": 5,
+              "num_splits_warm": 6
+            },
+            "dualstream_15_35_stats": {
+              "hot_ratio": 0.15873015873015872,
+              "warm_ratio": 0.36507936507936506,
+              "skip_ratio": 0.4761904761904762,
+              "phys_read_bits": 4.384920634920634,
+              "num_splits_hot": 5,
+              "num_splits_warm": 8
+            },
+            "memory_mb": {
+              "fp16_equiv": 32.0,
+              "packed_total": 9.482421875,
+              "compression_ratio": 3.3746652935118435,
+              "effective_bits_stored_total": 4.7412109375
+            }
+          },
+          "4096": {
+            "seq_len": 4096,
+            "latency_ms": {
+              "pytorch_sdpa": 0.8458739471435547,
+              "triton_fp16": 0.0981766414642334,
+              "triton_int4": 0.08655967712402343,
+              "bitplane_twopass": 0.14882080078125,
+              "bitplane_gated": 0.09028608322143555,
+              "bitplane_dualstream_15_85": 0.16149824142456054,
+              "bitplane_dualstream_15_35": 0.16221248626708984
+            },
+            "speedup_dual35_vs_sdpa": 5.21460441553671,
+            "speedup_dual35_vs_fp16": 0.6052347986491085,
+            "speedup_dual35_vs_int4": 0.5336190765333514,
+            "speedup_dual85_vs_int4": 0.535979069248611,
+            "gated_stats": {
+              "hot_ratio": 1.0,
+              "warm_ratio": 0.0,
+              "skip_ratio": 0.0,
+              "phys_read_bits": 9.25,
+              "num_splits": 15
+            },
+            "dualstream_15_85_stats": {
+              "hot_ratio": 0.15748031496062992,
+              "warm_ratio": 0.84251968503937,
+              "skip_ratio": 1.1102230246251565e-16,
+              "phys_read_bits": 6.8799212598425195,
+              "num_splits_hot": 8,
+              "num_splits_warm": 8
+            },
+            "dualstream_15_35_stats": {
+              "hot_ratio": 0.15748031496062992,
+              "warm_ratio": 0.3543307086614173,
+              "skip_ratio": 0.48818897637795283,
+              "phys_read_bits": 4.316929133858268,
+              "num_splits_hot": 8,
+              "num_splits_warm": 5
+            },
+            "memory_mb": {
+              "fp16_equiv": 64.0,
+              "packed_total": 18.607421875,
+              "compression_ratio": 3.4394877715965153,
+              "effective_bits_stored_total": 4.65185546875
+            }
+          },
+          "8192": {
+            "seq_len": 8192,
+            "latency_ms": {
+              "pytorch_sdpa": 1.6937289428710938,
+              "triton_fp16": 0.18868160247802734,
+              "triton_int4": 0.1064076805114746,
+              "bitplane_twopass": 0.19175487518310547,
+              "bitplane_gated": 0.14049023628234864,
+              "bitplane_dualstream_15_85": 0.23029855728149415,
+              "bitplane_dualstream_15_35": 0.22771743774414063
+            },
+            "speedup_dual35_vs_sdpa": 7.4378535067399545,
+            "speedup_dual35_vs_fp16": 0.8285777512130043,
+            "speedup_dual35_vs_int4": 0.467279456354293,
+            "speedup_dual85_vs_int4": 0.4620423235279429,
+            "gated_stats": {
+              "hot_ratio": 1.0,
+              "warm_ratio": 0.0,
+              "skip_ratio": 0.0,
+              "phys_read_bits": 9.25,
+              "num_splits": 31
+            },
+            "dualstream_15_85_stats": {
+              "hot_ratio": 0.15294117647058825,
+              "warm_ratio": 0.8470588235294118,
+              "skip_ratio": 0.0,
+              "phys_read_bits": 6.861764705882353,
+              "num_splits_hot": 4,
+              "num_splits_warm": 17
+            },
+            "dualstream_15_35_stats": {
+              "hot_ratio": 0.15294117647058825,
+              "warm_ratio": 0.35294117647058826,
+              "skip_ratio": 0.4941176470588235,
+              "phys_read_bits": 4.267647058823529,
+              "num_splits_hot": 4,
+              "num_splits_warm": 8
+            },
+            "memory_mb": {
+              "fp16_equiv": 128.0,
+              "packed_total": 36.857421875,
+              "compression_ratio": 3.472841926765937,
+              "effective_bits_stored_total": 4.607177734375
+            }
+          },
+          "16384": {
+            "seq_len": 16384,
+            "latency_ms": {
+              "pytorch_sdpa": 3.4534872436523436,
+              "triton_fp16": 0.37627391815185546,
+              "triton_int4": 0.19243936538696288,
+              "bitplane_twopass": 0.25967199325561524,
+              "bitplane_gated": 0.30181055068969725,
+              "bitplane_dualstream_15_85": 0.209617919921875,
+              "bitplane_dualstream_15_35": 0.16072128295898438
+            },
+            "speedup_dual35_vs_sdpa": 21.487429543065954,
+            "speedup_dual35_vs_fp16": 2.3411580048665956,
+            "speedup_dual35_vs_int4": 1.1973483650953238,
+            "speedup_dual85_vs_int4": 0.918048253978884,
+            "gated_stats": {
+              "hot_ratio": 1.0,
+              "warm_ratio": 0.0,
+              "skip_ratio": 0.0,
+              "phys_read_bits": 9.25,
+              "num_splits": 32
+            },
+            "dualstream_15_85_stats": {
+              "hot_ratio": 0.1506849315068493,
+              "warm_ratio": 0.8493150684931506,
+              "skip_ratio": 1.1102230246251565e-16,
+              "phys_read_bits": 6.852739726027396,
+              "num_splits_hot": 8,
+              "num_splits_warm": 17
+            },
+            "dualstream_15_35_stats": {
+              "hot_ratio": 0.1506849315068493,
+              "warm_ratio": 0.350293542074364,
+              "skip_ratio": 0.4990215264187868,
+              "phys_read_bits": 4.232876712328767,
+              "num_splits_hot": 8,
+              "num_splits_warm": 17
+            },
+            "memory_mb": {
+              "fp16_equiv": 256.0,
+              "packed_total": 73.357421875,
+              "compression_ratio": 3.489762773236774,
+              "effective_bits_stored_total": 4.5848388671875
+            }
+          },
+          "32768": {
+            "seq_len": 32768,
+            "latency_ms": {
+              "pytorch_sdpa": 6.850820922851563,
+              "triton_fp16": 0.7077152252197265,
+              "triton_int4": 0.36065333684285483,
+              "bitplane_twopass": 0.5144565264383952,
+              "bitplane_gated": 0.5779093424479167,
+              "bitplane_dualstream_15_85": 0.424617067972819,
+              "bitplane_dualstream_15_35": 0.25000640551249187
+            },
+            "speedup_dual35_vs_sdpa": 27.40258158109174,
+            "speedup_dual35_vs_fp16": 2.8307883702778356,
+            "speedup_dual35_vs_int4": 1.4425763856071854,
+            "speedup_dual85_vs_int4": 0.849361375332047,
+            "gated_stats": {
+              "hot_ratio": 1.0,
+              "warm_ratio": 0.0,
+              "skip_ratio": 0.0,
+              "phys_read_bits": 9.25,
+              "num_splits": 32
+            },
+            "dualstream_15_85_stats": {
+              "hot_ratio": 0.15053763440860216,
+              "warm_ratio": 0.8494623655913979,
+              "skip_ratio": 0.0,
+              "phys_read_bits": 6.852150537634409,
+              "num_splits_hot": 17,
+              "num_splits_warm": 17
+            },
+            "dualstream_15_35_stats": {
+              "hot_ratio": 0.15053763440860216,
+              "warm_ratio": 0.3509286412512219,
+              "skip_ratio": 0.49853372434017595,
+              "phys_read_bits": 4.234848484848485,
+              "num_splits_hot": 17,
+              "num_splits_warm": 17
+            },
+            "memory_mb": {
+              "fp16_equiv": 512.0,
+              "packed_total": 146.357421875,
+              "compression_ratio": 3.498285180489758,
+              "effective_bits_stored_total": 4.57366943359375
+            }
+          },
+          "65536": {
+            "seq_len": 65536,
+            "latency_ms": {
+              "pytorch_sdpa": 17.619340006510416,
+              "triton_fp16": 1.376464589436849,
+              "triton_int4": 0.6796842575073242,
+              "bitplane_twopass": 0.9701552073160807,
+              "bitplane_gated": 1.1114330291748047,
+              "bitplane_dualstream_15_85": 0.7760112126668294,
+              "bitplane_dualstream_15_35": 0.4624592145284017
+            },
+            "speedup_dual35_vs_sdpa": 38.09923005746128,
+            "speedup_dual35_vs_fp16": 2.9764021262729408,
+            "speedup_dual35_vs_int4": 1.4697171905212014,
+            "speedup_dual85_vs_int4": 0.8758691194313168,
+            "gated_stats": {
+              "hot_ratio": 0.9377137422561646,
+              "warm_ratio": 0.06228627264499664,
+              "skip_ratio": 0.0,
+              "phys_read_bits": 9.000855047255754,
+              "num_splits": 32
+            },
+            "dualstream_15_85_stats": {
+              "hot_ratio": 0.15046409379579873,
+              "warm_ratio": 0.8495359062042013,
+              "skip_ratio": 0.0,
+              "phys_read_bits": 6.8518563751831945,
+              "num_splits_hot": 17,
+              "num_splits_warm": 17
+            },
+            "dualstream_15_35_stats": {
+              "hot_ratio": 0.15046409379579873,
+              "warm_ratio": 0.35026868588177823,
+              "skip_ratio": 0.49926722032242304,
+              "phys_read_bits": 4.230703468490474,
+              "num_splits_hot": 17,
+              "num_splits_warm": 17
+            },
+            "memory_mb": {
+              "fp16_equiv": 1024.0,
+              "packed_total": 292.357421875,
+              "compression_ratio": 3.502562012733237,
+              "effective_bits_stored_total": 4.568084716796875
+            }
+          }
+        }
+      }
+    }
+  },
+  "ptxas": {
+    "d128_B4": {
+      "int4_splitkv": {
+        "n_regs": 128,
+        "shared_bytes": 9856,
+        "num_warps": 4,
+        "num_stages": 3,
+        "max_ctas_per_sm": 4,
+        "cp_async_pipelined": true
+      },
+      "singlepass_gated": {
+        "n_regs": 152,
+        "shared_bytes": 3584,
+        "num_warps": 4,
+        "num_stages": 3,
+        "max_ctas_per_sm": 3,
+        "cp_async_pipelined": false
+      },
+      "ellipsoid_score": {
+        "n_regs": 96,
+        "shared_bytes": 16384,
+        "num_warps": 4,
+        "num_stages": 3,
+        "max_ctas_per_sm": 5,
+        "cp_async_pipelined": true
+      },
+      "indexed_int4_hot": {
+        "n_regs": 128,
+        "shared_bytes": 5444,
+        "num_warps": 4,
+        "num_stages": 3,
+        "max_ctas_per_sm": 4,
+        "cp_async_pipelined": false
+      },
+      "indexed_base2_warm": {
+        "n_regs": 127,
+        "shared_bytes": 3396,
+        "num_warps": 4,
+        "num_stages": 3,
+        "max_ctas_per_sm": 4,
+        "cp_async_pipelined": false
+      }
+    },
+    "d256_B4": {
+      "int4_splitkv": {
+        "n_regs": 243,
+        "shared_bytes": 19584,
+        "num_warps": 4,
+        "num_stages": 3,
+        "max_ctas_per_sm": 2,
+        "cp_async_pipelined": true
+      },
+      "singlepass_gated": {
+        "n_regs": 235,
+        "shared_bytes": 7168,
+        "num_warps": 4,
+        "num_stages": 3,
+        "max_ctas_per_sm": 2,
+        "cp_async_pipelined": true
+      },
+      "ellipsoid_score": {
+        "n_regs": 163,
+        "shared_bytes": 32768,
+        "num_warps": 4,
+        "num_stages": 2,
+        "max_ctas_per_sm": 3,
+        "cp_async_pipelined": true
+      },
+      "indexed_int4_hot": {
+        "n_regs": 244,
+        "shared_bytes": 10820,
+        "num_warps": 4,
+        "num_stages": 3,
+        "max_ctas_per_sm": 2,
+        "cp_async_pipelined": true
+      },
+      "indexed_base2_warm": {
+        "n_regs": 221,
+        "shared_bytes": 6724,
+        "num_warps": 4,
+        "num_stages": 3,
+        "max_ctas_per_sm": 2,
+        "cp_async_pipelined": true
+      }
+    }
+  },
+  "end_to_end": {
+    "Qwen3.5-0.8B": {
+      "fp16_ppl": 2.034455180168152,
+      "configs": {
+        "triton_int4": {
+          "mean_ppl": 2.0234909653663635,
+          "delta_ppl": -0.01096421480178833,
+          "mean_kl": 0.0021457229740917683,
+          "needle_hits": 5,
+          "needle_total": 5,
+          "phys_read_bits": 9.25
+        },
+        "triton_dualstream_15_85": {
+          "mean_ppl": 2.0193561911582947,
+          "delta_ppl": -0.015098989009857178,
+          "mean_kl": 0.011819238308817148,
+          "needle_hits": 5,
+          "needle_total": 5,
+          "phys_read_bits": 6.8849206349206336
+        },
+        "triton_dualstream_15_35": {
+          "mean_ppl": 2.0105250477790833,
+          "delta_ppl": -0.023930132389068604,
+          "mean_kl": 0.013939011842012405,
+          "needle_hits": 5,
+          "needle_total": 5,
+          "phys_read_bits": 4.3849206349206336
+        },
+        "triton_dualstream_15_0": {
+          "mean_ppl": 2.0814173221588135,
+          "delta_ppl": 0.04696214199066162,
+          "mean_kl": 0.044183144345879555,
+          "needle_hits": 5,
+          "needle_total": 5,
+          "phys_read_bits": 2.4682539682539684
+        }
+      }
+    },
+    "Qwen3-0.6B": {
+      "fp16_ppl": 2.4540237188339233,
+      "configs": {
+        "triton_int4": {
+          "mean_ppl": 2.459342122077942,
+          "delta_ppl": 0.005318403244018555,
+          "mean_kl": 0.002233231789432466,
+          "needle_hits": 5,
+          "needle_total": 5,
+          "phys_read_bits": 9.25
+        },
+        "triton_dualstream_15_85": {
+          "mean_ppl": 2.558953881263733,
+          "delta_ppl": 0.10493016242980957,
+          "mean_kl": 0.009408666053786874,
+          "needle_hits": 5,
+          "needle_total": 5,
+          "phys_read_bits": 6.8849206349206336
+        },
+        "triton_dualstream_15_35": {
+          "mean_ppl": 2.579501211643219,
+          "delta_ppl": 0.12547749280929565,
+          "mean_kl": 0.011234440607950091,
+          "needle_hits": 5,
+          "needle_total": 5,
+          "phys_read_bits": 4.3849206349206336
+        },
+        "triton_dualstream_15_0": {
+          "mean_ppl": 2.7689008116722107,
+          "delta_ppl": 0.31487709283828735,
+          "mean_kl": 0.0486893393099308,
+          "needle_hits": 5,
+          "needle_total": 5,
+          "phys_read_bits": 2.4682539682539684
+        }
+      }
+    }
+  },
+  "elapsed_sec": 140.79853750000257
+}
