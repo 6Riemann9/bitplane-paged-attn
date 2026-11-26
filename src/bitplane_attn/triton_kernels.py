@@ -1,14 +1,15 @@
 """
 面向 Blackwell (RTX 5070 Ti) 的紧缩双位面 Split-KV Triton GPU 解码算子库 (Tensor Core 融合版)。
 
-提供三套采用完全同源 GQA 组共享 + 4 象限连续访存 + Tensor Core + Split-KV FlashDecoding 架构的 GPU 算子：
-  1. `triton_bitplane_decode`（主方法）：
-     - Stage 1 仅读取 2-bit Base 位面并用仿射预折叠 + FP16 Tensor Core 算出全部页粗分数 (fp16) 与摘要；
-     - 融合路由尾核 `_gqa_route_and_tail_kernel` 单核同时完成全精尾部 Window 计算与 GQA 组共享页打分；
-     - Stage 2 在同一核内对长尾页 (~85–90%) 零重读 K 且仅读 2-bit V_base，
-       对热点页 (~10–15%) 按需读取 K/V Residual 增量精修至 4-bit；
-  2. `triton_int4_paged_decode`（强量化基线）：同款 Tensor Core Split-KV 单 Pass 全量读取 4-bit；
-  3. `triton_fp16_paged_decode`（全精基线）：同款 Tensor Core Split-KV 读取全精 BF16/FP16 KV。
+提供面向连续页表 (`PackedBitPlaneKVCache`) 与生产级物理页池 (`PagedKVBatch` / `block_table`)
+的零循环内分支双流 Triton 解码算子家族：
+  1. `triton_paged_bitplane_dualstream_decode` / `triton_bitplane_dualstream_decode`（主方法）：
+     - 复用页内 `(k_min, k_scale)` 执行零额外索引开销的各向异性页排序启发式打分；
+     - GQA 组共享选出独占 Hot / Warm 页索引集合，通过 `block_table` 映射到物理池页号；
+     - 驱动两个完全无循环内分支的 Split-KV 算子核（Hot 4-bit + Warm 2-bit Base）与融合尾窗计算，
+       保持 <= 128 regs / thread 与 4 CTAs/SM 高占用率；
+  2. `triton_paged_int4_decode` / `triton_int4_paged_decode`（强量化基线）：全量 4-bit Split-KV；
+  3. `triton_fp16_paged_decode`（全精基线）：Split-KV FlashDecoding 全精 BF16/FP16 解码。
 """
 
 from __future__ import annotations
@@ -21,7 +22,8 @@ import torch.nn.functional as F
 import triton
 import triton.language as tl
 
-from .packed_cache import PackedBitPlaneKVCache
+from .packed_cache import PackedBitPlaneKVCache, PagedKVBatch
+from .quant_bitplane import compute_logical_read_bits_per_kv_elem
 
 
 def _choose_num_splits(batch_size: int, num_kv_heads: int, num_pages: int) -> int:
@@ -815,8 +817,9 @@ def _splitk_reduce_kernel(
         m_global = tl.where(l_k > 0.0, tl.maximum(m_global, m_k), m_global)
 
     if HAS_TAIL:
+        l_t = tl.load(tail_l_ptr + b * stride_tm_b + h * stride_tm_h)
         m_t = tl.load(tail_m_ptr + b * stride_tm_b + h * stride_tm_h)
-        m_global = tl.maximum(m_global, m_t)
+        m_global = tl.where(l_t > 0.0, tl.maximum(m_global, m_t), m_global)
 
     l_sum = tl.zeros((), tl.float32)
     o_acc = tl.zeros((BLOCK_D,), tl.float32)
@@ -831,7 +834,7 @@ def _splitk_reduce_kernel(
     if HAS_TAIL:
         l_t = tl.load(tail_l_ptr + b * stride_tm_b + h * stride_tm_h)
         m_t = tl.load(tail_m_ptr + b * stride_tm_b + h * stride_tm_h)
-        w_t = l_t * tl.exp(m_t - m_global)
+        w_t = tl.where(l_t > 0.0, l_t * tl.exp(m_t - m_global), 0.0)
         o_t = tl.load(tail_o_ptr + b * stride_to_b + h * stride_to_h + offs_d * stride_to_d, mask=mask_d, other=0.0).to(tl.float32)
         l_sum += w_t
         o_acc += w_t * o_t
@@ -1122,10 +1125,12 @@ def triton_bitplane_decode(
 
     if return_stats:
         actual_ratio = top_k / num_pages
+        lrb = compute_logical_read_bits_per_kv_elem("bitplane", hot_ratio=actual_ratio, head_dim=head_dim, page_size=page_size)
         return out, {
             "union_ratio": actual_ratio,
             "union_inflation": 1.0,
-            "eff_bits_per_elem": 2.0 + 2.0 * actual_ratio,
+            "eff_bits_per_elem": lrb,
+            "logical_read_bits_per_kv_elem": lrb,
             "num_splits": num_splits,
         }
     return out
@@ -1133,10 +1138,12 @@ def triton_bitplane_decode(
 
 def triton_int4_paged_decode(
     query: torch.Tensor,
-    cache: PackedBitPlaneKVCache,
+    cache: PackedBitPlaneKVCache | PagedKVBatch,
     scaling: float,
 ) -> torch.Tensor:
-    """全量 4-bit Tensor Core Split-KV Triton 解码基线。"""
+    """全量 4-bit Tensor Core Split-KV Triton 解码基线（自动兼容 `PackedBitPlaneKVCache` 与 `PagedKVBatch`）。"""
+    if isinstance(cache, PagedKVBatch):
+        return triton_paged_int4_decode(query, cache, scaling)
     if query.shape[2] != 1:
         raise ValueError(f"解码 Triton 核要求 L_q == 1，实际收到 {query.shape[2]}")
 
@@ -1991,12 +1998,17 @@ def triton_bitplane_gated_decode(
         hot_r = float((tier_out == 2).float().mean().item())
         warm_r = float((tier_out == 1).float().mean().item())
         skip_r = float((tier_out == 0).float().mean().item())
-        phys_bits = 3.0 * skip_r + 5.25 * warm_r + 9.25 * hot_r
+        lrb = compute_logical_read_bits_per_kv_elem(
+            "bitplane_gated", hot_ratio=hot_r, warm_ratio=warm_r, skip_ratio=skip_r,
+            head_dim=head_dim, page_size=page_size,
+        )
         return out, {
             "hot_ratio": hot_r,
             "warm_ratio": warm_r,
             "skip_ratio": skip_r,
-            "phys_read_bits": phys_bits,
+            "phys_read_bits": lrb,
+            "logical_read_bits_per_kv_elem": lrb,
+            "eff_bits_per_elem": lrb,
             "num_splits": num_splits,
         }
     return out
@@ -2070,9 +2082,9 @@ def _ellipsoid_score_kernel(
     USE_ELLIPSOID: tl.constexpr,
 ):
     """
-    零额外元数据椭球统计页打分核（Grid = (B * H_kv, cdiv(P, BLOCK_P))）：
-      复用已有页尺度的 (k_min, k_scale) 构造中心 k_mid = k_min + 7.5*k_scale 与半径 7.5*k_scale，
-      通过 FP16 Tensor Core 算出每头页上界期望 mu 及按行归一化防溢出的标准差修正。
+    零额外元数据各向异性页排序启发式打分核（Grid = (B * H_kv, cdiv(P, BLOCK_P))）：
+      复用已有页尺度的 (k_min, k_scale) 构造页中心 k_mid = k_min + 7.5*k_scale 与半宽 7.5*k_scale，
+      使用 FP16 Tensor Core 计算每头页排序分（非严格数学上界），可选叠加各向异性 L2 项。
     """
     b_kv = tl.program_id(0)
     p_blk = tl.program_id(1)
@@ -2230,7 +2242,7 @@ def _dualstream_agg_and_tail_kernel(
         mask_p = p_idx < num_pages
         hs = tl.load(hs_base + p_idx[None, :] * stride_hs_p, mask=mask_g[:, None] & mask_p[None, :], other=-1e20)
         u_rel = tl.where(mask_g[:, None] & mask_p[None, :], hs - h_max[:, None], -1e20)
-        grp_p = tl.max(u_rel, axis=0)
+        grp_p = tl.max(u_rel, axis=0) + 1e-5 * tl.sum(tl.exp(u_rel), axis=0)
         if PIN_PAGE0:
             grp_p = tl.where(p_idx == 0, 1e9, grp_p)
         tl.store(gs_base + p_idx * stride_gs_p, grp_p, mask=mask_p)
@@ -2577,23 +2589,37 @@ def _indexed_base2_splitkv_kernel(
 
 def triton_bitplane_dualstream_decode(
     query: torch.Tensor,
-    cache: PackedBitPlaneKVCache,
+    cache: PackedBitPlaneKVCache | PagedKVBatch,
     scaling: float,
     hot_ratio: float = 0.15,
     warm_ratio: float = 0.35,
     ellipsoid_beta: float = 1.5,
     pin_page0: bool = True,
     return_stats: bool = False,
+    score_mode: str = "anisotropic",
 ) -> torch.Tensor | tuple[torch.Tensor, dict[str, Any]]:
     """
-    Zero-Branch Ellipsoid-Routed Dual-Stream Bit-Plane 融合解码核（终极高速主方法）。
+    Zero-Branch 各向异性页排序路由 Dual-Stream Bit-Plane 融合解码核（终极高速主方法）。
+    自动兼容连续页缓存 (`PackedBitPlaneKVCache`) 与生产级物理页池批次 (`PagedKVBatch`)。
 
     核心设计：
-      1. 零额外存储的椭球统计页打分核仅扫 (k_min, k_scale) 元数据选页；
-      2. 互斥索引切片驱动两个完全无分支（cp.async 满流水线）的 Split-KV 核：
+      1. 零额外索引开销的页排序启发式核仅扫 `(k_min, k_scale)` 元数据选页；
+      2. 互斥索引切片驱动两个完全无分支的 Split-KV 核：
          Hot 流读取 4-bit 热点页，Warm 流超轻读取 2-bit Base 长尾页；
       3. 统一通过预分配分片缓存交由单次 Reduce 核合并 Hot + Warm + 全精尾部。
     """
+    if isinstance(cache, PagedKVBatch):
+        return triton_paged_bitplane_dualstream_decode(
+            query=query,
+            batch=cache,
+            scaling=scaling,
+            hot_ratio=hot_ratio,
+            warm_ratio=warm_ratio,
+            beta=ellipsoid_beta,
+            score_mode=score_mode,
+            pin_page0=pin_page0,
+            return_stats=return_stats,
+        )
     if query.shape[2] != 1:
         raise ValueError(f"解码 Triton 核要求 L_q == 1，实际收到 {query.shape[2]}")
 
@@ -2904,12 +2930,1366 @@ def triton_bitplane_dualstream_decode(
         hot_r = n_hot / num_pages
         warm_r = n_warm / num_pages
         skip_r = max(0.0, 1.0 - hot_r - warm_r)
-        phys_bits = 1.0 + 9.25 * hot_r + 5.25 * warm_r
+        lrb = compute_logical_read_bits_per_kv_elem(
+            "bitplane_dualstream", hot_ratio=hot_r, warm_ratio=warm_r, skip_ratio=skip_r,
+            head_dim=head_dim, page_size=page_size,
+        )
         return out, {
             "hot_ratio": hot_r,
             "warm_ratio": warm_r,
             "skip_ratio": skip_r,
-            "phys_read_bits": phys_bits,
+            "phys_read_bits": lrb,
+            "logical_read_bits_per_kv_elem": lrb,
+            "eff_bits_per_elem": lrb,
+            "num_splits_hot": num_splits_hot,
+            "num_splits_warm": num_splits_warm,
+        }
+    return out
+
+
+# ==============================================================================
+# 生产级真 PagedAttention 物理页池 Triton GPU 算子（Block-First Pool + block_table + Continuous Batching）
+# ==============================================================================
+
+
+@triton.jit
+def _paged_anisotropic_score_kernel(
+    q_ptr,
+    block_table_ptr,
+    num_pages_ptr,
+    k_min_pool_ptr,
+    k_scale_pool_ptr,
+    head_scores_ptr,
+    stride_qb,
+    stride_qh,
+    stride_qd,
+    stride_bt_b,
+    stride_bt_p,
+    stride_km_p,
+    stride_km_h,
+    stride_km_d,
+    stride_hs_b,
+    stride_hs_h,
+    stride_hs_p,
+    scaling,
+    beta,
+    max_pages,
+    H_kv: tl.constexpr,
+    G: tl.constexpr,
+    HEAD_DIM: tl.constexpr,
+    BLOCK_G: tl.constexpr,
+    BLOCK_D: tl.constexpr,
+    BLOCK_P: tl.constexpr,
+    SCORE_MODE: tl.constexpr,  # 0=center, 1=anisotropic, 2=box_l1
+):
+    """
+    真物理页池各向异性页排序启发式打分核（支持 `block_table` 间接寻址与变长 `num_pages_per_seq`）。
+    """
+    b_kv = tl.program_id(0)
+    p_blk = tl.program_id(1)
+    b = b_kv // H_kv
+    kv_h = b_kv % H_kv
+
+    seq_pages = tl.load(num_pages_ptr + b)
+    offs_g = tl.arange(0, BLOCK_G)
+    mask_g = offs_g < G
+    offs_d = tl.arange(0, BLOCK_D)
+    mask_d = offs_d < HEAD_DIM
+    offs_p = p_blk * BLOCK_P + tl.arange(0, BLOCK_P)
+    mask_p_out = offs_p < max_pages
+    mask_p_valid = offs_p < seq_pages
+
+    if p_blk * BLOCK_P >= seq_pages:
+        neg = tl.full((BLOCK_G, BLOCK_P), -1e20, tl.float32)
+        tl.store(
+            head_scores_ptr + b * stride_hs_b + (kv_h * G + offs_g[:, None]) * stride_hs_h + offs_p[None, :] * stride_hs_p,
+            neg,
+            mask=mask_g[:, None] & mask_p_out[None, :],
+        )
+        return
+
+    q_tile = tl.load(
+        q_ptr + b * stride_qb + (kv_h * G + offs_g[:, None]) * stride_qh + offs_d[None, :] * stride_qd,
+        mask=mask_g[:, None] & mask_d[None, :],
+        other=0.0,
+    ).to(tl.float32) * scaling
+
+    phys_p = tl.load(
+        block_table_ptr + b * stride_bt_b + offs_p * stride_bt_p,
+        mask=mask_p_valid,
+        other=0,
+    ).to(tl.int64)
+    p_meta_off = phys_p[:, None] * stride_km_p + kv_h * stride_km_h + offs_d[None, :] * stride_km_d
+    km = tl.load(k_min_pool_ptr + p_meta_off, mask=mask_p_valid[:, None] & mask_d[None, :], other=0.0).to(tl.float32)
+    ks = tl.load(k_scale_pool_ptr + p_meta_off, mask=mask_p_valid[:, None] & mask_d[None, :], other=0.0).to(tl.float32)
+
+    kmid_fp16 = (km + 7.5 * ks).to(tl.float16)
+    mu = tl.dot(q_tile.to(tl.float16), tl.trans(kmid_fp16))
+
+    if SCORE_MODE == 1:
+        q_max = tl.maximum(tl.max(tl.abs(q_tile), axis=1), 1e-6)
+        q_n = q_tile / q_max[:, None]
+        q_n2_fp16 = (q_n * q_n).to(tl.float16)
+
+        r_max = tl.maximum(tl.max(tl.abs(ks), axis=1), 1e-6)
+        ks_n = ks / r_max[:, None]
+        ks_n2_fp16 = (ks_n * ks_n).to(tl.float16)
+
+        var_n = tl.dot(q_n2_fp16, tl.trans(ks_n2_fp16))
+        u = mu + beta * (7.5 * q_max[:, None] * r_max[None, :]) * tl.sqrt(tl.maximum(var_n, 0.0))
+    elif SCORE_MODE == 2:
+        r_fp16 = (7.5 * ks).to(tl.float16)
+        u = mu + tl.dot(tl.abs(q_tile).to(tl.float16), tl.trans(r_fp16))
+    else:
+        u = mu
+
+    u = tl.where(mask_p_valid[None, :], u, -1e20)
+    tl.store(
+        head_scores_ptr + b * stride_hs_b + (kv_h * G + offs_g[:, None]) * stride_hs_h + offs_p[None, :] * stride_hs_p,
+        u,
+        mask=mask_g[:, None] & mask_p_out[None, :],
+    )
+
+
+@triton.jit
+def _paged_dualstream_agg_and_tail_kernel(
+    q_ptr,
+    k_tail_ptr,
+    v_tail_ptr,
+    head_scores_ptr,
+    num_pages_ptr,
+    tail_lens_ptr,
+    tail_m_ptr,
+    tail_l_ptr,
+    tail_o_ptr,
+    grp_scores_ptr,
+    stride_qb,
+    stride_qh,
+    stride_qd,
+    stride_kt_b,
+    stride_kt_h,
+    stride_kt_s,
+    stride_kt_d,
+    stride_hs_b,
+    stride_hs_h,
+    stride_hs_p,
+    stride_tm_b,
+    stride_tm_h,
+    stride_to_b,
+    stride_to_h,
+    stride_to_d,
+    stride_gs_b,
+    stride_gs_h,
+    stride_gs_p,
+    scaling,
+    max_pages,
+    H_kv: tl.constexpr,
+    G: tl.constexpr,
+    HEAD_DIM: tl.constexpr,
+    BLOCK_G: tl.constexpr,
+    BLOCK_D: tl.constexpr,
+    BLOCK_T: tl.constexpr,
+    BLOCK_P: tl.constexpr,
+    HAS_TAIL: tl.constexpr,
+    COMPUTE_TAIL: tl.constexpr,
+    COMPUTE_SCORES: tl.constexpr,
+    PIN_PAGE0: tl.constexpr,
+):
+    """
+    真页表连续批处理尾部全精计算与 GQA 组页聚合融合单核：
+    原生读取每样本 `seq_pages` 与 `seq_tail`，确保零长度尾部或异构历史页互不干扰。
+    """
+    b_kv = tl.program_id(0)
+    b = b_kv // H_kv
+    kv_h = b_kv % H_kv
+
+    offs_g = tl.arange(0, BLOCK_G)
+    mask_g = offs_g < G
+    offs_d = tl.arange(0, BLOCK_D)
+    mask_d = offs_d < HEAD_DIM
+
+    seq_pages = tl.load(num_pages_ptr + b)
+    seq_tail = tl.load(tail_lens_ptr + b)
+
+    if HAS_TAIL and COMPUTE_TAIL:
+        if seq_tail > 0:
+            offs_t = tl.arange(0, BLOCK_T)
+            mask_t = offs_t < seq_tail
+            q_tile = tl.load(
+                q_ptr + b * stride_qb + (kv_h * G + offs_g[:, None]) * stride_qh + offs_d[None, :] * stride_qd,
+                mask=mask_g[:, None] & mask_d[None, :],
+                other=0.0,
+            ).to(tl.float32) * scaling
+            kt_tile = tl.load(
+                k_tail_ptr + b * stride_kt_b + kv_h * stride_kt_h + offs_t[:, None] * stride_kt_s + offs_d[None, :] * stride_kt_d,
+                mask=mask_t[:, None] & mask_d[None, :],
+                other=0.0,
+            ).to(tl.float32)
+            s_t = tl.dot(q_tile.to(tl.float16), tl.trans(kt_tile.to(tl.float16)))
+            s_t = tl.where(mask_t[None, :], s_t, -1e20)
+
+            m_t = tl.max(s_t, axis=1)
+            exp_t = tl.where(mask_t[None, :], tl.exp(s_t - m_t[:, None]), 0.0)
+            l_t = tl.sum(exp_t, axis=1)
+            w_t = exp_t / tl.maximum(l_t[:, None], 1e-30)
+            vt_tile = tl.load(
+                v_tail_ptr + b * stride_kt_b + kv_h * stride_kt_h + offs_t[:, None] * stride_kt_s + offs_d[None, :] * stride_kt_d,
+                mask=mask_t[:, None] & mask_d[None, :],
+                other=0.0,
+            ).to(tl.float32)
+            o_t = tl.dot(w_t.to(tl.float16), vt_tile.to(tl.float16))
+
+            tl.store(tail_m_ptr + b * stride_tm_b + (kv_h * G + offs_g) * stride_tm_h, m_t, mask=mask_g)
+            tl.store(tail_l_ptr + b * stride_tm_b + (kv_h * G + offs_g) * stride_tm_h, l_t, mask=mask_g)
+            tl.store(
+                tail_o_ptr + b * stride_to_b + (kv_h * G + offs_g[:, None]) * stride_to_h + offs_d[None, :] * stride_to_d,
+                o_t,
+                mask=mask_g[:, None] & mask_d[None, :],
+            )
+        else:
+            tl.store(tail_m_ptr + b * stride_tm_b + (kv_h * G + offs_g) * stride_tm_h, tl.full((BLOCK_G,), -1e20, tl.float32), mask=mask_g)
+            tl.store(tail_l_ptr + b * stride_tm_b + (kv_h * G + offs_g) * stride_tm_h, tl.zeros((BLOCK_G,), tl.float32), mask=mask_g)
+            tl.store(
+                tail_o_ptr + b * stride_to_b + (kv_h * G + offs_g[:, None]) * stride_to_h + offs_d[None, :] * stride_to_d,
+                tl.zeros((BLOCK_G, BLOCK_D), tl.float32),
+                mask=mask_g[:, None] & mask_d[None, :],
+            )
+
+    if not COMPUTE_SCORES:
+        return
+
+    hs_base = head_scores_ptr + b * stride_hs_b + (kv_h * G + offs_g[:, None]) * stride_hs_h
+    gs_base = grp_scores_ptr + b * stride_gs_b + kv_h * stride_gs_h
+
+    h_max = tl.full((BLOCK_G,), -1e20, tl.float32)
+    offs_p = tl.arange(0, BLOCK_P)
+    for start_p in range(0, seq_pages, BLOCK_P):
+        p_idx = start_p + offs_p
+        mask_p = p_idx < seq_pages
+        hs = tl.load(hs_base + p_idx[None, :] * stride_hs_p, mask=mask_g[:, None] & mask_p[None, :], other=-1e20)
+        h_max = tl.maximum(h_max, tl.max(hs, axis=1))
+
+    for start_p in range(0, max_pages, BLOCK_P):
+        p_idx = start_p + offs_p
+        mask_p_out = p_idx < max_pages
+        mask_p_valid = p_idx < seq_pages
+        hs = tl.load(hs_base + p_idx[None, :] * stride_hs_p, mask=mask_g[:, None] & mask_p_valid[None, :], other=-1e20)
+        u_rel = tl.where(mask_g[:, None] & mask_p_valid[None, :], hs - h_max[:, None], -1e20)
+        grp_p = tl.max(u_rel, axis=0) + 1e-5 * tl.sum(tl.exp(u_rel), axis=0)
+        if PIN_PAGE0:
+            grp_p = tl.where((p_idx == 0) & mask_p_valid, 1e9, grp_p)
+        grp_p = tl.where(mask_p_valid, grp_p, -1e20)
+        tl.store(gs_base + p_idx * stride_gs_p, grp_p, mask=mask_p_out)
+
+
+@triton.jit
+def _paged_indexed_int4_splitkv_kernel(
+    q_ptr,
+    phys_page_idx_ptr,
+    n_sel_ptr,
+    k_base_pool_ptr,
+    k_res_pool_ptr,
+    k_min_pool_ptr,
+    k_scale_pool_ptr,
+    v_base_pool_ptr,
+    v_res_pool_ptr,
+    v_min_pool_ptr,
+    v_scale_pool_ptr,
+    part_m_ptr,
+    part_l_ptr,
+    part_o_ptr,
+    stride_qb,
+    stride_qh,
+    stride_qd,
+    stride_pi_b,
+    stride_pi_h,
+    stride_pi_k,
+    stride_kb_p,
+    stride_kb_h,
+    stride_kb_s,
+    stride_kb_d4,
+    stride_km_p,
+    stride_km_h,
+    stride_km_d,
+    stride_vm_p,
+    stride_vm_h,
+    stride_vm_s,
+    stride_pm_b,
+    stride_pm_h,
+    stride_pm_k,
+    stride_po_b,
+    stride_po_h,
+    stride_po_k,
+    stride_po_d,
+    scaling,
+    num_splits,
+    split_offset,
+    uniform_n_sel,
+    H_kv: tl.constexpr,
+    G: tl.constexpr,
+    D4: tl.constexpr,
+    PAGE_SIZE: tl.constexpr,
+    BLOCK_G: tl.constexpr,
+    BLOCK_D4: tl.constexpr,
+    UNIFORM_N_SEL: tl.constexpr,
+):
+    """真物理页池 Zero-Branch Hot 流核：无循环内分支，从 Block-First 物理池读取完整 4-bit 页。"""
+    b_kv = tl.program_id(0)
+    split_id = tl.program_id(1)
+    b = b_kv // H_kv
+    kv_h = b_kv % H_kv
+
+    n_sel_b = uniform_n_sel if UNIFORM_N_SEL else tl.load(n_sel_ptr + b)
+    pages_per_split = tl.cdiv(n_sel_b, num_splits)
+    i_start = split_id * pages_per_split
+    i_end = tl.minimum(n_sel_b, i_start + pages_per_split)
+    out_slot = split_offset + split_id
+
+    offs_g = tl.arange(0, BLOCK_G)
+    mask_g = offs_g < G
+    offs_d4 = tl.arange(0, BLOCK_D4)
+    mask_d4 = offs_d4 < D4
+    offs_s = tl.arange(0, PAGE_SIZE)
+
+    pm_out = part_m_ptr + b * stride_pm_b + (kv_h * G + offs_g) * stride_pm_h + out_slot * stride_pm_k
+    pl_out = part_l_ptr + b * stride_pm_b + (kv_h * G + offs_g) * stride_pm_h + out_slot * stride_pm_k
+    po_out = part_o_ptr + b * stride_po_b + (kv_h * G + offs_g[:, None]) * stride_po_h + out_slot * stride_po_k
+
+    if i_start >= i_end:
+        tl.store(pm_out, tl.full((BLOCK_G,), -1e20, tl.float32), mask=mask_g)
+        tl.store(pl_out, tl.zeros((BLOCK_G,), tl.float32), mask=mask_g)
+        z_o = tl.zeros((BLOCK_G, BLOCK_D4), tl.float32)
+        tl.store(po_out + (0 * D4 + offs_d4[None, :]) * stride_po_d, z_o, mask=mask_g[:, None] & mask_d4[None, :])
+        tl.store(po_out + (1 * D4 + offs_d4[None, :]) * stride_po_d, z_o, mask=mask_g[:, None] & mask_d4[None, :])
+        tl.store(po_out + (2 * D4 + offs_d4[None, :]) * stride_po_d, z_o, mask=mask_g[:, None] & mask_d4[None, :])
+        tl.store(po_out + (3 * D4 + offs_d4[None, :]) * stride_po_d, z_o, mask=mask_g[:, None] & mask_d4[None, :])
+        return
+
+    q_row_ptr = q_ptr + b * stride_qb + (kv_h * G + offs_g[:, None]) * stride_qh
+    q0 = tl.load(q_row_ptr + (0 * D4 + offs_d4[None, :]) * stride_qd, mask=mask_g[:, None] & mask_d4[None, :], other=0.0).to(tl.float32) * scaling
+    q1 = tl.load(q_row_ptr + (1 * D4 + offs_d4[None, :]) * stride_qd, mask=mask_g[:, None] & mask_d4[None, :], other=0.0).to(tl.float32) * scaling
+    q2 = tl.load(q_row_ptr + (2 * D4 + offs_d4[None, :]) * stride_qd, mask=mask_g[:, None] & mask_d4[None, :], other=0.0).to(tl.float32) * scaling
+    q3 = tl.load(q_row_ptr + (3 * D4 + offs_d4[None, :]) * stride_qd, mask=mask_g[:, None] & mask_d4[None, :], other=0.0).to(tl.float32) * scaling
+
+    m_i = tl.full((BLOCK_G,), -1e20, tl.float32)
+    l_i = tl.zeros((BLOCK_G,), tl.float32)
+    acc0 = tl.zeros((BLOCK_G, BLOCK_D4), tl.float32)
+    acc1 = tl.zeros((BLOCK_G, BLOCK_D4), tl.float32)
+    acc2 = tl.zeros((BLOCK_G, BLOCK_D4), tl.float32)
+    acc3 = tl.zeros((BLOCK_G, BLOCK_D4), tl.float32)
+
+    pi_base = phys_page_idx_ptr + b * stride_pi_b + kv_h * stride_pi_h
+    kbase_base = k_base_pool_ptr + kv_h * stride_kb_h
+    kres_base = k_res_pool_ptr + kv_h * stride_kb_h
+    kmin_base = k_min_pool_ptr + kv_h * stride_km_h
+    kscale_base = k_scale_pool_ptr + kv_h * stride_km_h
+    vbase_base = v_base_pool_ptr + kv_h * stride_kb_h
+    vres_base = v_res_pool_ptr + kv_h * stride_kb_h
+    vmin_base = v_min_pool_ptr + kv_h * stride_vm_h
+    vscale_base = v_scale_pool_ptr + kv_h * stride_vm_h
+
+    for i in range(i_start, i_end):
+        p = tl.load(pi_base + i * stride_pi_k).to(tl.int64)
+        km_off = p * stride_km_p
+        km0 = tl.load(kmin_base + km_off + (0 * D4 + offs_d4) * stride_km_d, mask=mask_d4, other=0.0).to(tl.float32)
+        km1 = tl.load(kmin_base + km_off + (1 * D4 + offs_d4) * stride_km_d, mask=mask_d4, other=0.0).to(tl.float32)
+        km2 = tl.load(kmin_base + km_off + (2 * D4 + offs_d4) * stride_km_d, mask=mask_d4, other=0.0).to(tl.float32)
+        km3 = tl.load(kmin_base + km_off + (3 * D4 + offs_d4) * stride_km_d, mask=mask_d4, other=0.0).to(tl.float32)
+
+        ks0 = tl.load(kscale_base + km_off + (0 * D4 + offs_d4) * stride_km_d, mask=mask_d4, other=0.0).to(tl.float32)
+        ks1 = tl.load(kscale_base + km_off + (1 * D4 + offs_d4) * stride_km_d, mask=mask_d4, other=0.0).to(tl.float32)
+        ks2 = tl.load(kscale_base + km_off + (2 * D4 + offs_d4) * stride_km_d, mask=mask_d4, other=0.0).to(tl.float32)
+        ks3 = tl.load(kscale_base + km_off + (3 * D4 + offs_d4) * stride_km_d, mask=mask_d4, other=0.0).to(tl.float32)
+
+        bias_k = (
+            tl.sum(q0 * km0[None, :], axis=1)
+            + tl.sum(q1 * km1[None, :], axis=1)
+            + tl.sum(q2 * km2[None, :], axis=1)
+            + tl.sum(q3 * km3[None, :], axis=1)
+        )
+
+        p_byte_off = p * stride_kb_p + offs_s[:, None] * stride_kb_s + offs_d4[None, :] * stride_kb_d4
+        kb = tl.load(kbase_base + p_byte_off, mask=mask_d4[None, :], other=0)
+        kr = tl.load(kres_base + p_byte_off, mask=mask_d4[None, :], other=0)
+
+        s_p = tl.broadcast_to(bias_k[:, None], (BLOCK_G, PAGE_SIZE))
+        s_p = tl.dot((q0 * ks0[None, :]).to(tl.float16), tl.trans(4.0 * (kb & 3).to(tl.float16) + (kr & 3).to(tl.float16)), acc=s_p)
+        s_p = tl.dot((q1 * ks1[None, :]).to(tl.float16), tl.trans(4.0 * ((kb >> 2) & 3).to(tl.float16) + ((kr >> 2) & 3).to(tl.float16)), acc=s_p)
+        s_p = tl.dot((q2 * ks2[None, :]).to(tl.float16), tl.trans(4.0 * ((kb >> 4) & 3).to(tl.float16) + ((kr >> 4) & 3).to(tl.float16)), acc=s_p)
+        s_p = tl.dot((q3 * ks3[None, :]).to(tl.float16), tl.trans(4.0 * ((kb >> 6) & 3).to(tl.float16) + ((kr >> 6) & 3).to(tl.float16)), acc=s_p)
+
+        m_ij = tl.max(s_p, axis=1)
+        m_new = tl.maximum(m_i, m_ij)
+        alpha = tl.where(l_i == 0.0, 0.0, tl.exp(m_i - m_new))
+        p_val = tl.exp(s_p - m_new[:, None])
+        l_i = l_i * alpha + tl.sum(p_val, axis=1)
+        m_i = m_new
+
+        acc0 = acc0 * alpha[:, None]
+        acc1 = acc1 * alpha[:, None]
+        acc2 = acc2 * alpha[:, None]
+        acc3 = acc3 * alpha[:, None]
+
+        vm = tl.load(vmin_base + p * stride_vm_p + offs_s * stride_vm_s).to(tl.float32)
+        vs = tl.load(vscale_base + p * stride_vm_p + offs_s * stride_vm_s).to(tl.float32)
+        vb = tl.load(vbase_base + p_byte_off, mask=mask_d4[None, :], other=0)
+        vr = tl.load(vres_base + p_byte_off, mask=mask_d4[None, :], other=0)
+
+        scalar_bias = tl.sum(p_val * vm[None, :], axis=1)[:, None]
+        p_sc = p_val * vs[None, :]
+        row_scale = tl.maximum(tl.max(tl.abs(p_sc), axis=1), 1e-12)
+        p_sc_n = (p_sc / row_scale[:, None]).to(tl.float16)
+
+        acc0 += scalar_bias + row_scale[:, None] * tl.dot(p_sc_n, 4.0 * (vb & 3).to(tl.float16) + (vr & 3).to(tl.float16))
+        acc1 += scalar_bias + row_scale[:, None] * tl.dot(p_sc_n, 4.0 * ((vb >> 2) & 3).to(tl.float16) + ((vr >> 2) & 3).to(tl.float16))
+        acc2 += scalar_bias + row_scale[:, None] * tl.dot(p_sc_n, 4.0 * ((vb >> 4) & 3).to(tl.float16) + ((vr >> 4) & 3).to(tl.float16))
+        acc3 += scalar_bias + row_scale[:, None] * tl.dot(p_sc_n, 4.0 * ((vb >> 6) & 3).to(tl.float16) + ((vr >> 6) & 3).to(tl.float16))
+
+    inv_l = 1.0 / tl.maximum(l_i, 1e-30)
+    tl.store(pm_out, m_i, mask=mask_g)
+    tl.store(pl_out, l_i, mask=mask_g)
+    tl.store(po_out + (0 * D4 + offs_d4[None, :]) * stride_po_d, acc0 * inv_l[:, None], mask=mask_g[:, None] & mask_d4[None, :])
+    tl.store(po_out + (1 * D4 + offs_d4[None, :]) * stride_po_d, acc1 * inv_l[:, None], mask=mask_g[:, None] & mask_d4[None, :])
+    tl.store(po_out + (2 * D4 + offs_d4[None, :]) * stride_po_d, acc2 * inv_l[:, None], mask=mask_g[:, None] & mask_d4[None, :])
+    tl.store(po_out + (3 * D4 + offs_d4[None, :]) * stride_po_d, acc3 * inv_l[:, None], mask=mask_g[:, None] & mask_d4[None, :])
+
+
+@triton.jit
+def _paged_indexed_base2_splitkv_kernel(
+    q_ptr,
+    phys_page_idx_ptr,
+    n_sel_ptr,
+    k_base_pool_ptr,
+    k_min_pool_ptr,
+    k_scale_pool_ptr,
+    v_base_pool_ptr,
+    v_min_pool_ptr,
+    v_scale_pool_ptr,
+    part_m_ptr,
+    part_l_ptr,
+    part_o_ptr,
+    stride_qb,
+    stride_qh,
+    stride_qd,
+    stride_pi_b,
+    stride_pi_h,
+    stride_pi_k,
+    stride_kb_p,
+    stride_kb_h,
+    stride_kb_s,
+    stride_kb_d4,
+    stride_km_p,
+    stride_km_h,
+    stride_km_d,
+    stride_vm_p,
+    stride_vm_h,
+    stride_vm_s,
+    stride_pm_b,
+    stride_pm_h,
+    stride_pm_k,
+    stride_po_b,
+    stride_po_h,
+    stride_po_k,
+    stride_po_d,
+    scaling,
+    num_splits,
+    split_offset,
+    uniform_n_sel,
+    H_kv: tl.constexpr,
+    G: tl.constexpr,
+    D4: tl.constexpr,
+    PAGE_SIZE: tl.constexpr,
+    BLOCK_G: tl.constexpr,
+    BLOCK_D4: tl.constexpr,
+    UNIFORM_N_SEL: tl.constexpr,
+):
+    """真物理页池 Zero-Branch Warm 流核：无循环内分支，仅从 Block-First 物理池读取 2-bit Base 位面。"""
+    b_kv = tl.program_id(0)
+    split_id = tl.program_id(1)
+    b = b_kv // H_kv
+    kv_h = b_kv % H_kv
+
+    n_sel_b = uniform_n_sel if UNIFORM_N_SEL else tl.load(n_sel_ptr + b)
+    pages_per_split = tl.cdiv(n_sel_b, num_splits)
+    i_start = split_id * pages_per_split
+    i_end = tl.minimum(n_sel_b, i_start + pages_per_split)
+    out_slot = split_offset + split_id
+
+    offs_g = tl.arange(0, BLOCK_G)
+    mask_g = offs_g < G
+    offs_d4 = tl.arange(0, BLOCK_D4)
+    mask_d4 = offs_d4 < D4
+    offs_s = tl.arange(0, PAGE_SIZE)
+
+    pm_out = part_m_ptr + b * stride_pm_b + (kv_h * G + offs_g) * stride_pm_h + out_slot * stride_pm_k
+    pl_out = part_l_ptr + b * stride_pm_b + (kv_h * G + offs_g) * stride_pm_h + out_slot * stride_pm_k
+    po_out = part_o_ptr + b * stride_po_b + (kv_h * G + offs_g[:, None]) * stride_po_h + out_slot * stride_po_k
+
+    if i_start >= i_end:
+        tl.store(pm_out, tl.full((BLOCK_G,), -1e20, tl.float32), mask=mask_g)
+        tl.store(pl_out, tl.zeros((BLOCK_G,), tl.float32), mask=mask_g)
+        z_o = tl.zeros((BLOCK_G, BLOCK_D4), tl.float32)
+        tl.store(po_out + (0 * D4 + offs_d4[None, :]) * stride_po_d, z_o, mask=mask_g[:, None] & mask_d4[None, :])
+        tl.store(po_out + (1 * D4 + offs_d4[None, :]) * stride_po_d, z_o, mask=mask_g[:, None] & mask_d4[None, :])
+        tl.store(po_out + (2 * D4 + offs_d4[None, :]) * stride_po_d, z_o, mask=mask_g[:, None] & mask_d4[None, :])
+        tl.store(po_out + (3 * D4 + offs_d4[None, :]) * stride_po_d, z_o, mask=mask_g[:, None] & mask_d4[None, :])
+        return
+
+    q_row_ptr = q_ptr + b * stride_qb + (kv_h * G + offs_g[:, None]) * stride_qh
+    q0 = tl.load(q_row_ptr + (0 * D4 + offs_d4[None, :]) * stride_qd, mask=mask_g[:, None] & mask_d4[None, :], other=0.0).to(tl.float32) * scaling
+    q1 = tl.load(q_row_ptr + (1 * D4 + offs_d4[None, :]) * stride_qd, mask=mask_g[:, None] & mask_d4[None, :], other=0.0).to(tl.float32) * scaling
+    q2 = tl.load(q_row_ptr + (2 * D4 + offs_d4[None, :]) * stride_qd, mask=mask_g[:, None] & mask_d4[None, :], other=0.0).to(tl.float32) * scaling
+    q3 = tl.load(q_row_ptr + (3 * D4 + offs_d4[None, :]) * stride_qd, mask=mask_g[:, None] & mask_d4[None, :], other=0.0).to(tl.float32) * scaling
+
+    m_i = tl.full((BLOCK_G,), -1e20, tl.float32)
+    l_i = tl.zeros((BLOCK_G,), tl.float32)
+    acc0 = tl.zeros((BLOCK_G, BLOCK_D4), tl.float32)
+    acc1 = tl.zeros((BLOCK_G, BLOCK_D4), tl.float32)
+    acc2 = tl.zeros((BLOCK_G, BLOCK_D4), tl.float32)
+    acc3 = tl.zeros((BLOCK_G, BLOCK_D4), tl.float32)
+
+    pi_base = phys_page_idx_ptr + b * stride_pi_b + kv_h * stride_pi_h
+    kbase_base = k_base_pool_ptr + kv_h * stride_kb_h
+    kmin_base = k_min_pool_ptr + kv_h * stride_km_h
+    kscale_base = k_scale_pool_ptr + kv_h * stride_km_h
+    vbase_base = v_base_pool_ptr + kv_h * stride_kb_h
+    vmin_base = v_min_pool_ptr + kv_h * stride_vm_h
+    vscale_base = v_scale_pool_ptr + kv_h * stride_vm_h
+
+    for i in range(i_start, i_end):
+        p = tl.load(pi_base + i * stride_pi_k).to(tl.int64)
+        km_off = p * stride_km_p
+        km0 = tl.load(kmin_base + km_off + (0 * D4 + offs_d4) * stride_km_d, mask=mask_d4, other=0.0).to(tl.float32)
+        km1 = tl.load(kmin_base + km_off + (1 * D4 + offs_d4) * stride_km_d, mask=mask_d4, other=0.0).to(tl.float32)
+        km2 = tl.load(kmin_base + km_off + (2 * D4 + offs_d4) * stride_km_d, mask=mask_d4, other=0.0).to(tl.float32)
+        km3 = tl.load(kmin_base + km_off + (3 * D4 + offs_d4) * stride_km_d, mask=mask_d4, other=0.0).to(tl.float32)
+
+        ks0 = tl.load(kscale_base + km_off + (0 * D4 + offs_d4) * stride_km_d, mask=mask_d4, other=0.0).to(tl.float32)
+        ks1 = tl.load(kscale_base + km_off + (1 * D4 + offs_d4) * stride_km_d, mask=mask_d4, other=0.0).to(tl.float32)
+        ks2 = tl.load(kscale_base + km_off + (2 * D4 + offs_d4) * stride_km_d, mask=mask_d4, other=0.0).to(tl.float32)
+        ks3 = tl.load(kscale_base + km_off + (3 * D4 + offs_d4) * stride_km_d, mask=mask_d4, other=0.0).to(tl.float32)
+
+        bias_k = (
+            tl.sum(q0 * (km0[None, :] + 1.5 * ks0[None, :]), axis=1)
+            + tl.sum(q1 * (km1[None, :] + 1.5 * ks1[None, :]), axis=1)
+            + tl.sum(q2 * (km2[None, :] + 1.5 * ks2[None, :]), axis=1)
+            + tl.sum(q3 * (km3[None, :] + 1.5 * ks3[None, :]), axis=1)
+        )
+
+        p_byte_off = p * stride_kb_p + offs_s[:, None] * stride_kb_s + offs_d4[None, :] * stride_kb_d4
+        kb = tl.load(kbase_base + p_byte_off, mask=mask_d4[None, :], other=0)
+
+        s_p = tl.broadcast_to(bias_k[:, None], (BLOCK_G, PAGE_SIZE))
+        s_p = tl.dot((q0 * (4.0 * ks0[None, :])).to(tl.float16), tl.trans((kb & 3).to(tl.float16)), acc=s_p)
+        s_p = tl.dot((q1 * (4.0 * ks1[None, :])).to(tl.float16), tl.trans(((kb >> 2) & 3).to(tl.float16)), acc=s_p)
+        s_p = tl.dot((q2 * (4.0 * ks2[None, :])).to(tl.float16), tl.trans(((kb >> 4) & 3).to(tl.float16)), acc=s_p)
+        s_p = tl.dot((q3 * (4.0 * ks3[None, :])).to(tl.float16), tl.trans(((kb >> 6) & 3).to(tl.float16)), acc=s_p)
+
+        m_ij = tl.max(s_p, axis=1)
+        m_new = tl.maximum(m_i, m_ij)
+        alpha = tl.where(l_i == 0.0, 0.0, tl.exp(m_i - m_new))
+        p_val = tl.exp(s_p - m_new[:, None])
+        l_i = l_i * alpha + tl.sum(p_val, axis=1)
+        m_i = m_new
+
+        acc0 = acc0 * alpha[:, None]
+        acc1 = acc1 * alpha[:, None]
+        acc2 = acc2 * alpha[:, None]
+        acc3 = acc3 * alpha[:, None]
+
+        vm = tl.load(vmin_base + p * stride_vm_p + offs_s * stride_vm_s).to(tl.float32)
+        vs = tl.load(vscale_base + p * stride_vm_p + offs_s * stride_vm_s).to(tl.float32)
+        vb = tl.load(vbase_base + p_byte_off, mask=mask_d4[None, :], other=0)
+
+        scalar_bias = tl.sum(p_val * (vm[None, :] + 1.5 * vs[None, :]), axis=1)[:, None]
+        p_sc = 4.0 * p_val * vs[None, :]
+        row_scale = tl.maximum(tl.max(tl.abs(p_sc), axis=1), 1e-12)
+        p_sc_n = (p_sc / row_scale[:, None]).to(tl.float16)
+
+        acc0 += scalar_bias + row_scale[:, None] * tl.dot(p_sc_n, (vb & 3).to(tl.float16))
+        acc1 += scalar_bias + row_scale[:, None] * tl.dot(p_sc_n, ((vb >> 2) & 3).to(tl.float16))
+        acc2 += scalar_bias + row_scale[:, None] * tl.dot(p_sc_n, ((vb >> 4) & 3).to(tl.float16))
+        acc3 += scalar_bias + row_scale[:, None] * tl.dot(p_sc_n, ((vb >> 6) & 3).to(tl.float16))
+
+    inv_l = 1.0 / tl.maximum(l_i, 1e-30)
+    tl.store(pm_out, m_i, mask=mask_g)
+    tl.store(pl_out, l_i, mask=mask_g)
+    tl.store(po_out + (0 * D4 + offs_d4[None, :]) * stride_po_d, acc0 * inv_l[:, None], mask=mask_g[:, None] & mask_d4[None, :])
+    tl.store(po_out + (1 * D4 + offs_d4[None, :]) * stride_po_d, acc1 * inv_l[:, None], mask=mask_g[:, None] & mask_d4[None, :])
+    tl.store(po_out + (2 * D4 + offs_d4[None, :]) * stride_po_d, acc2 * inv_l[:, None], mask=mask_g[:, None] & mask_d4[None, :])
+    tl.store(po_out + (3 * D4 + offs_d4[None, :]) * stride_po_d, acc3 * inv_l[:, None], mask=mask_g[:, None] & mask_d4[None, :])
+
+
+@triton.jit
+def _paged_int4_splitkv_kernel(
+    q_ptr,
+    block_table_ptr,
+    num_pages_ptr,
+    k_base_pool_ptr,
+    k_res_pool_ptr,
+    k_min_pool_ptr,
+    k_scale_pool_ptr,
+    v_base_pool_ptr,
+    v_res_pool_ptr,
+    v_min_pool_ptr,
+    v_scale_pool_ptr,
+    part_m_ptr,
+    part_l_ptr,
+    part_o_ptr,
+    stride_qb,
+    stride_qh,
+    stride_qd,
+    stride_bt_b,
+    stride_bt_p,
+    stride_kb_p,
+    stride_kb_h,
+    stride_kb_s,
+    stride_kb_d4,
+    stride_km_p,
+    stride_km_h,
+    stride_km_d,
+    stride_vm_p,
+    stride_vm_h,
+    stride_vm_s,
+    stride_pm_b,
+    stride_pm_h,
+    stride_pm_k,
+    stride_po_b,
+    stride_po_h,
+    stride_po_k,
+    stride_po_d,
+    scaling,
+    num_splits,
+    H_kv: tl.constexpr,
+    G: tl.constexpr,
+    D4: tl.constexpr,
+    PAGE_SIZE: tl.constexpr,
+    BLOCK_G: tl.constexpr,
+    BLOCK_D4: tl.constexpr,
+):
+    """真物理页池全量 4-bit Split-KV 基线核，通过 `block_table` 间接寻址物理页。"""
+    b_kv = tl.program_id(0)
+    split_id = tl.program_id(1)
+    b = b_kv // H_kv
+    kv_h = b_kv % H_kv
+
+    seq_pages = tl.load(num_pages_ptr + b)
+    pages_per_split = tl.cdiv(seq_pages, num_splits)
+    lp_start = split_id * pages_per_split
+    lp_end = tl.minimum(seq_pages, lp_start + pages_per_split)
+
+    offs_g = tl.arange(0, BLOCK_G)
+    mask_g = offs_g < G
+    offs_d4 = tl.arange(0, BLOCK_D4)
+    mask_d4 = offs_d4 < D4
+    offs_s = tl.arange(0, PAGE_SIZE)
+
+    pm_out = part_m_ptr + b * stride_pm_b + (kv_h * G + offs_g) * stride_pm_h + split_id * stride_pm_k
+    pl_out = part_l_ptr + b * stride_pm_b + (kv_h * G + offs_g) * stride_pm_h + split_id * stride_pm_k
+    po_out = part_o_ptr + b * stride_po_b + (kv_h * G + offs_g[:, None]) * stride_po_h + split_id * stride_po_k
+
+    if lp_start >= lp_end:
+        tl.store(pm_out, tl.full((BLOCK_G,), -1e20, tl.float32), mask=mask_g)
+        tl.store(pl_out, tl.zeros((BLOCK_G,), tl.float32), mask=mask_g)
+        z_o = tl.zeros((BLOCK_G, BLOCK_D4), tl.float32)
+        tl.store(po_out + (0 * D4 + offs_d4[None, :]) * stride_po_d, z_o, mask=mask_g[:, None] & mask_d4[None, :])
+        tl.store(po_out + (1 * D4 + offs_d4[None, :]) * stride_po_d, z_o, mask=mask_g[:, None] & mask_d4[None, :])
+        tl.store(po_out + (2 * D4 + offs_d4[None, :]) * stride_po_d, z_o, mask=mask_g[:, None] & mask_d4[None, :])
+        tl.store(po_out + (3 * D4 + offs_d4[None, :]) * stride_po_d, z_o, mask=mask_g[:, None] & mask_d4[None, :])
+        return
+
+    q_row_ptr = q_ptr + b * stride_qb + (kv_h * G + offs_g[:, None]) * stride_qh
+    q0 = tl.load(q_row_ptr + (0 * D4 + offs_d4[None, :]) * stride_qd, mask=mask_g[:, None] & mask_d4[None, :], other=0.0).to(tl.float32) * scaling
+    q1 = tl.load(q_row_ptr + (1 * D4 + offs_d4[None, :]) * stride_qd, mask=mask_g[:, None] & mask_d4[None, :], other=0.0).to(tl.float32) * scaling
+    q2 = tl.load(q_row_ptr + (2 * D4 + offs_d4[None, :]) * stride_qd, mask=mask_g[:, None] & mask_d4[None, :], other=0.0).to(tl.float32) * scaling
+    q3 = tl.load(q_row_ptr + (3 * D4 + offs_d4[None, :]) * stride_qd, mask=mask_g[:, None] & mask_d4[None, :], other=0.0).to(tl.float32) * scaling
+
+    m_i = tl.full((BLOCK_G,), -1e20, tl.float32)
+    l_i = tl.zeros((BLOCK_G,), tl.float32)
+    acc0 = tl.zeros((BLOCK_G, BLOCK_D4), tl.float32)
+    acc1 = tl.zeros((BLOCK_G, BLOCK_D4), tl.float32)
+    acc2 = tl.zeros((BLOCK_G, BLOCK_D4), tl.float32)
+    acc3 = tl.zeros((BLOCK_G, BLOCK_D4), tl.float32)
+
+    bt_base = block_table_ptr + b * stride_bt_b
+    kbase_base = k_base_pool_ptr + kv_h * stride_kb_h
+    kres_base = k_res_pool_ptr + kv_h * stride_kb_h
+    kmin_base = k_min_pool_ptr + kv_h * stride_km_h
+    kscale_base = k_scale_pool_ptr + kv_h * stride_km_h
+    vbase_base = v_base_pool_ptr + kv_h * stride_kb_h
+    vres_base = v_res_pool_ptr + kv_h * stride_kb_h
+    vmin_base = v_min_pool_ptr + kv_h * stride_vm_h
+    vscale_base = v_scale_pool_ptr + kv_h * stride_vm_h
+
+    for lp in range(lp_start, lp_end):
+        p = tl.load(bt_base + lp * stride_bt_p).to(tl.int64)
+        km_off = p * stride_km_p
+        km0 = tl.load(kmin_base + km_off + (0 * D4 + offs_d4) * stride_km_d, mask=mask_d4, other=0.0).to(tl.float32)
+        km1 = tl.load(kmin_base + km_off + (1 * D4 + offs_d4) * stride_km_d, mask=mask_d4, other=0.0).to(tl.float32)
+        km2 = tl.load(kmin_base + km_off + (2 * D4 + offs_d4) * stride_km_d, mask=mask_d4, other=0.0).to(tl.float32)
+        km3 = tl.load(kmin_base + km_off + (3 * D4 + offs_d4) * stride_km_d, mask=mask_d4, other=0.0).to(tl.float32)
+
+        ks0 = tl.load(kscale_base + km_off + (0 * D4 + offs_d4) * stride_km_d, mask=mask_d4, other=0.0).to(tl.float32)
+        ks1 = tl.load(kscale_base + km_off + (1 * D4 + offs_d4) * stride_km_d, mask=mask_d4, other=0.0).to(tl.float32)
+        ks2 = tl.load(kscale_base + km_off + (2 * D4 + offs_d4) * stride_km_d, mask=mask_d4, other=0.0).to(tl.float32)
+        ks3 = tl.load(kscale_base + km_off + (3 * D4 + offs_d4) * stride_km_d, mask=mask_d4, other=0.0).to(tl.float32)
+
+        bias_k = (
+            tl.sum(q0 * km0[None, :], axis=1)
+            + tl.sum(q1 * km1[None, :], axis=1)
+            + tl.sum(q2 * km2[None, :], axis=1)
+            + tl.sum(q3 * km3[None, :], axis=1)
+        )
+
+        p_byte_off = p * stride_kb_p + offs_s[:, None] * stride_kb_s + offs_d4[None, :] * stride_kb_d4
+        kb = tl.load(kbase_base + p_byte_off, mask=mask_d4[None, :], other=0)
+        kr = tl.load(kres_base + p_byte_off, mask=mask_d4[None, :], other=0)
+
+        s_p = tl.broadcast_to(bias_k[:, None], (BLOCK_G, PAGE_SIZE))
+        s_p = tl.dot((q0 * ks0[None, :]).to(tl.float16), tl.trans(4.0 * (kb & 3).to(tl.float16) + (kr & 3).to(tl.float16)), acc=s_p)
+        s_p = tl.dot((q1 * ks1[None, :]).to(tl.float16), tl.trans(4.0 * ((kb >> 2) & 3).to(tl.float16) + ((kr >> 2) & 3).to(tl.float16)), acc=s_p)
+        s_p = tl.dot((q2 * ks2[None, :]).to(tl.float16), tl.trans(4.0 * ((kb >> 4) & 3).to(tl.float16) + ((kr >> 4) & 3).to(tl.float16)), acc=s_p)
+        s_p = tl.dot((q3 * ks3[None, :]).to(tl.float16), tl.trans(4.0 * ((kb >> 6) & 3).to(tl.float16) + ((kr >> 6) & 3).to(tl.float16)), acc=s_p)
+
+        m_ij = tl.max(s_p, axis=1)
+        m_new = tl.maximum(m_i, m_ij)
+        alpha = tl.where(l_i == 0.0, 0.0, tl.exp(m_i - m_new))
+        p_val = tl.exp(s_p - m_new[:, None])
+        l_i = l_i * alpha + tl.sum(p_val, axis=1)
+        m_i = m_new
+
+        acc0 = acc0 * alpha[:, None]
+        acc1 = acc1 * alpha[:, None]
+        acc2 = acc2 * alpha[:, None]
+        acc3 = acc3 * alpha[:, None]
+
+        vm = tl.load(vmin_base + p * stride_vm_p + offs_s * stride_vm_s).to(tl.float32)
+        vs = tl.load(vscale_base + p * stride_vm_p + offs_s * stride_vm_s).to(tl.float32)
+        vb = tl.load(vbase_base + p_byte_off, mask=mask_d4[None, :], other=0)
+        vr = tl.load(vres_base + p_byte_off, mask=mask_d4[None, :], other=0)
+
+        scalar_bias = tl.sum(p_val * vm[None, :], axis=1)[:, None]
+        p_sc = p_val * vs[None, :]
+        row_scale = tl.maximum(tl.max(tl.abs(p_sc), axis=1), 1e-12)
+        p_sc_n = (p_sc / row_scale[:, None]).to(tl.float16)
+
+        acc0 += scalar_bias + row_scale[:, None] * tl.dot(p_sc_n, 4.0 * (vb & 3).to(tl.float16) + (vr & 3).to(tl.float16))
+        acc1 += scalar_bias + row_scale[:, None] * tl.dot(p_sc_n, 4.0 * ((vb >> 2) & 3).to(tl.float16) + ((vr >> 2) & 3).to(tl.float16))
+        acc2 += scalar_bias + row_scale[:, None] * tl.dot(p_sc_n, 4.0 * ((vb >> 4) & 3).to(tl.float16) + ((vr >> 4) & 3).to(tl.float16))
+        acc3 += scalar_bias + row_scale[:, None] * tl.dot(p_sc_n, 4.0 * ((vb >> 6) & 3).to(tl.float16) + ((vr >> 6) & 3).to(tl.float16))
+
+    inv_l = 1.0 / tl.maximum(l_i, 1e-30)
+    tl.store(pm_out, m_i, mask=mask_g)
+    tl.store(pl_out, l_i, mask=mask_g)
+    tl.store(po_out + (0 * D4 + offs_d4[None, :]) * stride_po_d, acc0 * inv_l[:, None], mask=mask_g[:, None] & mask_d4[None, :])
+    tl.store(po_out + (1 * D4 + offs_d4[None, :]) * stride_po_d, acc1 * inv_l[:, None], mask=mask_g[:, None] & mask_d4[None, :])
+    tl.store(po_out + (2 * D4 + offs_d4[None, :]) * stride_po_d, acc2 * inv_l[:, None], mask=mask_g[:, None] & mask_d4[None, :])
+    tl.store(po_out + (3 * D4 + offs_d4[None, :]) * stride_po_d, acc3 * inv_l[:, None], mask=mask_g[:, None] & mask_d4[None, :])
+
+
+def _compute_variable_tail_torch(
+    query: torch.Tensor,
+    batch: PagedKVBatch,
+    scaling: float,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """当尾部长度超出核内块上限 (>64) 或批内全无历史页时，支持变长 `tail_lens` 的精确尾部统计。"""
+    bsz, h_q, _, head_dim = query.shape
+    h_kv = batch.num_kv_heads
+    grp = h_q // h_kv
+    max_t = batch.max_tail_len
+    device = query.device
+
+    if max_t == 0:
+        return (
+            torch.full((bsz, h_q), -1e20, dtype=torch.float32, device=device),
+            torch.zeros((bsz, h_q), dtype=torch.float32, device=device),
+            torch.zeros((bsz, h_q, head_dim), dtype=torch.float32, device=device),
+        )
+
+    q_g = query.squeeze(2).view(bsz, h_kv, grp, head_dim).float()
+    kt = batch.k_tail.float()
+    vt = batch.v_tail.float()
+    scores_t = torch.matmul(q_g, kt.transpose(-2, -1)) * scaling  # (B, H_kv, G, max_t)
+    t_pos = torch.arange(max_t, device=device, dtype=torch.int32)
+    mask_t = (t_pos[None, :] < batch.tail_lens[:, None])[:, None, None, :]  # (B, 1, 1, max_t)
+    has_t = (batch.tail_lens > 0)[:, None, None]
+
+    scores_masked = torch.where(mask_t, scores_t, torch.full_like(scores_t, -1e20))
+    tm_g = scores_masked.max(dim=-1).values
+    exp_t = torch.where(mask_t, torch.exp(scores_masked - tm_g.unsqueeze(-1)), 0.0)
+    tl_g = torch.where(has_t, exp_t.sum(dim=-1), torch.zeros_like(tm_g))
+    probs_t = exp_t / torch.clamp(tl_g.unsqueeze(-1), min=1e-30)
+    to_g = torch.matmul(probs_t, vt)
+    to_g = torch.where(has_t.unsqueeze(-1), to_g, torch.zeros_like(to_g))
+
+    tm_g = torch.where(has_t, tm_g, torch.full_like(tm_g, -1e20))
+    return tm_g.reshape(bsz, h_q), tl_g.reshape(bsz, h_q), to_g.reshape(bsz, h_q, head_dim)
+
+
+def _resolve_score_mode_id(score_mode: str, beta: float) -> int:
+    """将文本页排序策略映射为 Triton 编译常量 ID。"""
+    s = score_mode.lower()
+    if s == "center" or (s in ("anisotropic", "ellipsoid") and float(beta) <= 0.0):
+        return 0
+    if s in ("anisotropic", "ellipsoid"):
+        return 1
+    if s == "box_l1":
+        return 2
+    raise ValueError(f"不支持的 score_mode={score_mode}，可选 'anisotropic' | 'center' | 'box_l1'")
+
+
+def triton_paged_int4_decode(
+    query: torch.Tensor,
+    batch: PagedKVBatch,
+    scaling: float,
+) -> torch.Tensor:
+    """
+    真 `PagedAttention` 物理页池全量 4-bit Tensor Core Split-KV 解码基线。
+    原生支持乱序 `block_table` 与不等长 Continuous Batching。
+    """
+    if query.shape[2] != 1:
+        raise ValueError(f"解码 Triton 核要求 L_q == 1，实际收到 {query.shape[2]}")
+
+    bsz, h_q, _, head_dim = query.shape
+    h_kv = batch.num_kv_heads
+    grp = h_q // h_kv
+    max_pages = batch.max_pages_host
+    page_size = batch.page_size
+    max_tail = batch.max_tail_host
+    has_tail = max_tail > 0
+
+    if max_pages == 0:
+        _, _, tail_o = _compute_variable_tail_torch(query, batch, scaling)
+        return tail_o.unsqueeze(1).to(query.dtype)
+
+    d4 = head_dim // 4
+    block_g = max(16, triton.next_power_of_2(grp))
+    block_d4 = max(16, triton.next_power_of_2(d4))
+    block_d = max(16, triton.next_power_of_2(head_dim))
+    block_t = max(16, triton.next_power_of_2(max(1, max_tail)))
+    num_splits = _choose_num_splits(bsz, h_kv, max_pages)
+    device = query.device
+    pool = batch.pool
+
+    q_c = query.squeeze(2).contiguous()
+    part_m = torch.empty((bsz, h_q, num_splits), dtype=torch.float32, device=device)
+    part_l = torch.empty((bsz, h_q, num_splits), dtype=torch.float32, device=device)
+    part_o = torch.empty((bsz, h_q, num_splits, head_dim), dtype=torch.float32, device=device)
+
+    _paged_int4_splitkv_kernel[(bsz * h_kv, num_splits)](
+        q_c,
+        batch.block_table,
+        batch.num_pages_per_seq,
+        pool.k_base_pool,
+        pool.k_res_pool,
+        pool.k_min_pool,
+        pool.k_scale_pool,
+        pool.v_base_pool,
+        pool.v_res_pool,
+        pool.v_min_pool,
+        pool.v_scale_pool,
+        part_m,
+        part_l,
+        part_o,
+        q_c.stride(0),
+        q_c.stride(1),
+        q_c.stride(2),
+        batch.block_table.stride(0),
+        batch.block_table.stride(1),
+        pool.k_base_pool.stride(0),
+        pool.k_base_pool.stride(1),
+        pool.k_base_pool.stride(2),
+        pool.k_base_pool.stride(3),
+        pool.k_min_pool.stride(0),
+        pool.k_min_pool.stride(1),
+        pool.k_min_pool.stride(2),
+        pool.v_min_pool.stride(0),
+        pool.v_min_pool.stride(1),
+        pool.v_min_pool.stride(2),
+        part_m.stride(0),
+        part_m.stride(1),
+        part_m.stride(2),
+        part_o.stride(0),
+        part_o.stride(1),
+        part_o.stride(2),
+        part_o.stride(3),
+        scaling,
+        num_splits,
+        H_kv=h_kv,
+        G=grp,
+        D4=d4,
+        PAGE_SIZE=page_size,
+        BLOCK_G=block_g,
+        BLOCK_D4=block_d4,
+        num_warps=4,
+    )
+
+    tail_m = torch.empty((bsz, h_q), dtype=torch.float32, device=device)
+    tail_l = torch.empty((bsz, h_q), dtype=torch.float32, device=device)
+    tail_o = torch.empty((bsz, h_q, head_dim), dtype=torch.float32, device=device)
+    if has_tail:
+        if max_tail <= 64:
+            dummy_hs = torch.empty((bsz, h_q, max_pages), dtype=torch.float32, device=device)
+            dummy_gs = torch.empty((bsz, h_kv, max_pages), dtype=torch.float32, device=device)
+            _paged_dualstream_agg_and_tail_kernel[(bsz * h_kv,)](
+                q_c,
+                batch.k_tail,
+                batch.v_tail,
+                dummy_hs,
+                batch.num_pages_per_seq,
+                batch.tail_lens,
+                tail_m,
+                tail_l,
+                tail_o,
+                dummy_gs,
+                q_c.stride(0),
+                q_c.stride(1),
+                q_c.stride(2),
+                batch.k_tail.stride(0),
+                batch.k_tail.stride(1),
+                batch.k_tail.stride(2),
+                batch.k_tail.stride(3),
+                dummy_hs.stride(0),
+                dummy_hs.stride(1),
+                dummy_hs.stride(2),
+                tail_m.stride(0),
+                tail_m.stride(1),
+                tail_o.stride(0),
+                tail_o.stride(1),
+                tail_o.stride(2),
+                dummy_gs.stride(0),
+                dummy_gs.stride(1),
+                dummy_gs.stride(2),
+                scaling,
+                max_pages,
+                H_kv=h_kv,
+                G=grp,
+                HEAD_DIM=head_dim,
+                BLOCK_G=block_g,
+                BLOCK_D=block_d,
+                BLOCK_T=block_t,
+                BLOCK_P=16,
+                HAS_TAIL=True,
+                COMPUTE_TAIL=True,
+                COMPUTE_SCORES=False,
+                PIN_PAGE0=True,
+                num_warps=4,
+            )
+        else:
+            tail_m, tail_l, tail_o = _compute_variable_tail_torch(query, batch, scaling)
+
+    out_fp32 = torch.empty((bsz, 1, h_q, head_dim), dtype=torch.float32, device=device)
+    out_v = out_fp32.squeeze(1)
+    _splitk_reduce_kernel[(bsz * h_q,)](
+        part_m,
+        part_l,
+        part_o,
+        tail_m,
+        tail_l,
+        tail_o,
+        out_v,
+        part_m.stride(0),
+        part_m.stride(1),
+        part_m.stride(2),
+        part_o.stride(0),
+        part_o.stride(1),
+        part_o.stride(2),
+        part_o.stride(3),
+        tail_m.stride(0),
+        tail_m.stride(1),
+        tail_o.stride(0),
+        tail_o.stride(1),
+        tail_o.stride(2),
+        out_v.stride(0),
+        out_v.stride(1),
+        out_v.stride(2),
+        num_splits,
+        H_q=h_q,
+        HEAD_DIM=head_dim,
+        BLOCK_D=block_d,
+        HAS_TAIL=has_tail,
+    )
+    return out_fp32.to(query.dtype)
+
+
+def triton_paged_bitplane_dualstream_decode(
+    query: torch.Tensor,
+    batch: PagedKVBatch,
+    scaling: float,
+    hot_ratio: float = 0.15,
+    warm_ratio: float = 0.35,
+    beta: float = 1.5,
+    score_mode: str = "anisotropic",
+    pin_page0: bool = True,
+    return_stats: bool = False,
+) -> torch.Tensor | tuple[torch.Tensor, dict[str, Any]]:
+    """
+    真 `PagedAttention` 物理页池 Zero-Branch Dual-Stream Bit-Plane 融合解码入口。
+
+    同时支持：
+      - 任意乱序 / 碎片化 `block_table` 物理页池映射；
+      - Prefix Caching 共享块无拷贝读取；
+      - 异构历史页数与异构尾部全精窗长的 Continuous Batching；
+      - 三种零额外元数据页排序模式：`anisotropic` / `center` / `box_l1`。
+    """
+    if query.shape[2] != 1:
+        raise ValueError(f"解码 Triton 核要求 L_q == 1，实际收到 {query.shape[2]}")
+    if hot_ratio <= 0.0 and warm_ratio <= 0.0:
+        raise ValueError("hot_ratio 与 warm_ratio 不能同时为 0")
+
+    bsz, h_q, _, head_dim = query.shape
+    h_kv = batch.num_kv_heads
+    grp = h_q // h_kv
+    max_pages = batch.max_pages_host
+    page_size = batch.page_size
+    max_tail = batch.max_tail_host
+    has_tail = max_tail > 0
+    device = query.device
+
+    if max_pages == 0:
+        _, _, tail_o = _compute_variable_tail_torch(query, batch, scaling)
+        out = tail_o.unsqueeze(1).to(query.dtype)
+        if return_stats:
+            return out, {
+                "hot_ratio": 0.0,
+                "warm_ratio": 0.0,
+                "skip_ratio": 0.0,
+                "phys_read_bits": 16.0,
+                "logical_read_bits_per_kv_elem": 16.0,
+                "eff_bits_per_elem": 16.0,
+                "num_splits_hot": 0,
+                "num_splits_warm": 0,
+            }
+        return out
+
+    num_pages_t = batch.num_pages_per_seq
+    num_pages_host = batch.num_pages_host if batch.num_pages_host else tuple(int(x) for x in num_pages_t.tolist())
+    uniform_batch = batch.is_uniform_pages and (len(set(num_pages_host)) <= 1)
+
+    n_hot_list = [
+        0 if (np <= 0 or hot_ratio <= 0.0) else min(np, max(1, math.ceil(np * float(hot_ratio))))
+        for np in num_pages_host
+    ]
+    n_warm_list = [
+        0 if (np <= 0 or warm_ratio <= 0.0) else min(max(0, np - nh), max(0, math.ceil(np * float(warm_ratio))))
+        for np, nh in zip(num_pages_host, n_hot_list)
+    ]
+
+    # 全量页均已选中为 Hot 时（零 GPU->CPU 同步判断），直通物理页表 4-bit 核
+    if all(nh == np for nh, np in zip(n_hot_list, num_pages_host)):
+        out = triton_paged_int4_decode(query, batch, scaling)
+        if return_stats:
+            lrb = compute_logical_read_bits_per_kv_elem("int4", head_dim=head_dim, page_size=page_size)
+            return out, {
+                "hot_ratio": 1.0,
+                "warm_ratio": 0.0,
+                "skip_ratio": 0.0,
+                "phys_read_bits": lrb,
+                "logical_read_bits_per_kv_elem": lrb,
+                "eff_bits_per_elem": lrb,
+                "num_splits_hot": _choose_num_splits(bsz, h_kv, max_pages),
+                "num_splits_warm": 0,
+            }
+        return out
+
+    d4 = head_dim // 4
+    block_g = max(16, triton.next_power_of_2(grp))
+    block_d4 = max(16, triton.next_power_of_2(d4))
+    block_d = max(16, triton.next_power_of_2(head_dim))
+    block_t = max(16, triton.next_power_of_2(max(1, max_tail)))
+    pool = batch.pool
+
+    q_c = query.squeeze(2).contiguous()
+    head_scores = torch.empty((bsz, h_q, max_pages), dtype=torch.float32, device=device)
+    grp_scores = torch.empty((bsz, h_kv, max_pages), dtype=torch.float32, device=device)
+
+    score_mode_id = _resolve_score_mode_id(score_mode, beta)
+    block_p_score = 32
+    score_stages = 2 if head_dim >= 256 else 3
+    _paged_anisotropic_score_kernel[(bsz * h_kv, triton.cdiv(max_pages, block_p_score))](
+        q_c,
+        batch.block_table,
+        num_pages_t,
+        pool.k_min_pool,
+        pool.k_scale_pool,
+        head_scores,
+        q_c.stride(0),
+        q_c.stride(1),
+        q_c.stride(2),
+        batch.block_table.stride(0),
+        batch.block_table.stride(1),
+        pool.k_min_pool.stride(0),
+        pool.k_min_pool.stride(1),
+        pool.k_min_pool.stride(2),
+        head_scores.stride(0),
+        head_scores.stride(1),
+        head_scores.stride(2),
+        scaling,
+        float(beta),
+        max_pages,
+        H_kv=h_kv,
+        G=grp,
+        HEAD_DIM=head_dim,
+        BLOCK_G=block_g,
+        BLOCK_D=block_d,
+        BLOCK_P=block_p_score,
+        SCORE_MODE=score_mode_id,
+        num_warps=4,
+        num_stages=score_stages,
+    )
+
+    tail_m = torch.empty((bsz, h_q), dtype=torch.float32, device=device)
+    tail_l = torch.empty((bsz, h_q), dtype=torch.float32, device=device)
+    tail_o = torch.empty((bsz, h_q, head_dim), dtype=torch.float32, device=device)
+
+    use_kernel_tail = (not has_tail) or (max_tail <= 64)
+    kt_ref = batch.k_tail if (has_tail and use_kernel_tail) else q_c[:, :h_kv, :1]
+    vt_ref = batch.v_tail if (has_tail and use_kernel_tail) else q_c[:, :h_kv, :1]
+
+    _paged_dualstream_agg_and_tail_kernel[(bsz * h_kv,)](
+        q_c,
+        kt_ref,
+        vt_ref,
+        head_scores,
+        num_pages_t,
+        batch.tail_lens,
+        tail_m,
+        tail_l,
+        tail_o,
+        grp_scores,
+        q_c.stride(0),
+        q_c.stride(1),
+        q_c.stride(2),
+        kt_ref.stride(0),
+        kt_ref.stride(1),
+        kt_ref.stride(2) if kt_ref.ndim == 4 else 1,
+        kt_ref.stride(3) if kt_ref.ndim == 4 else 1,
+        head_scores.stride(0),
+        head_scores.stride(1),
+        head_scores.stride(2),
+        tail_m.stride(0),
+        tail_m.stride(1),
+        tail_o.stride(0),
+        tail_o.stride(1),
+        tail_o.stride(2),
+        grp_scores.stride(0),
+        grp_scores.stride(1),
+        grp_scores.stride(2),
+        scaling,
+        max_pages,
+        H_kv=h_kv,
+        G=grp,
+        HEAD_DIM=head_dim,
+        BLOCK_G=block_g,
+        BLOCK_D=block_d,
+        BLOCK_T=block_t,
+        BLOCK_P=256,
+        HAS_TAIL=has_tail,
+        COMPUTE_TAIL=use_kernel_tail,
+        COMPUTE_SCORES=True,
+        PIN_PAGE0=bool(pin_page0),
+        num_warps=4,
+    )
+
+    if has_tail and (not use_kernel_tail):
+        tail_m, tail_l, tail_o = _compute_variable_tail_torch(query, batch, scaling)
+
+    max_hot = max(n_hot_list)
+    max_warm = max(n_warm_list)
+    k_topk = max(1, min(max_pages, max(nh + nw for nh, nw in zip(n_hot_list, n_warm_list))))
+    top_logical = torch.topk(grp_scores, k=k_topk, dim=-1, sorted=True).indices  # (B, H_kv, k_topk)
+
+    bt_exp = batch.block_table[:, None, :].expand(bsz, h_kv, max_pages)
+
+    if uniform_batch:
+        # Uniform Fast-Path：仅 1 次 torch.gather 并零拷贝切出 Hot/Warm 物理索引，彻底消灭额外同步
+        top_phys = torch.gather(bt_exp, -1, top_logical).to(torch.int32)
+        hot_phys_idx = top_phys[:, :, :max_hot]
+        warm_phys_idx = top_phys[:, :, max_hot : max_hot + max_warm]
+        n_hot_t = num_pages_t
+        n_warm_t = num_pages_t
+    else:
+        n_hot_t = torch.tensor(n_hot_list, dtype=torch.int32, device=device)
+        n_warm_t = torch.tensor(n_warm_list, dtype=torch.int32, device=device)
+        if max_hot > 0:
+            pos_h = torch.arange(max_hot, device=device, dtype=torch.long).view(1, 1, max_hot).clamp(max=k_topk - 1)
+            hot_logical = torch.gather(top_logical, -1, pos_h.expand(bsz, h_kv, max_hot))
+            hot_phys_idx = torch.gather(bt_exp, -1, hot_logical.clamp(min=0, max=max_pages - 1)).to(torch.int32)
+        else:
+            hot_phys_idx = torch.empty((bsz, h_kv, 0), dtype=torch.int32, device=device)
+
+        if max_warm > 0:
+            pos_w = (
+                n_hot_t.long().view(bsz, 1, 1)
+                + torch.arange(max_warm, device=device, dtype=torch.long).view(1, 1, max_warm)
+            ).clamp(max=k_topk - 1)
+            warm_logical = torch.gather(top_logical, -1, pos_w.expand(bsz, h_kv, max_warm))
+            warm_phys_idx = torch.gather(bt_exp, -1, warm_logical.clamp(min=0, max=max_pages - 1)).to(torch.int32)
+        else:
+            warm_phys_idx = torch.empty((bsz, h_kv, 0), dtype=torch.int32, device=device)
+
+    sm_cnt = _get_sm_count(device)
+    num_splits_hot = _choose_dual_splits(bsz, h_kv, max_hot, head_dim=head_dim, sm_count=sm_cnt)
+    num_splits_warm = _choose_dual_splits(bsz, h_kv, max_warm, head_dim=head_dim, sm_count=sm_cnt)
+    total_splits = num_splits_hot + num_splits_warm
+
+    part_m = torch.empty((bsz, h_q, total_splits), dtype=torch.float32, device=device)
+    part_l = torch.empty((bsz, h_q, total_splits), dtype=torch.float32, device=device)
+    part_o = torch.empty((bsz, h_q, total_splits, head_dim), dtype=torch.float32, device=device)
+
+    if max_hot > 0:
+        _paged_indexed_int4_splitkv_kernel[(bsz * h_kv, num_splits_hot)](
+            q_c,
+            hot_phys_idx,
+            n_hot_t,
+            pool.k_base_pool,
+            pool.k_res_pool,
+            pool.k_min_pool,
+            pool.k_scale_pool,
+            pool.v_base_pool,
+            pool.v_res_pool,
+            pool.v_min_pool,
+            pool.v_scale_pool,
+            part_m,
+            part_l,
+            part_o,
+            q_c.stride(0),
+            q_c.stride(1),
+            q_c.stride(2),
+            hot_phys_idx.stride(0),
+            hot_phys_idx.stride(1),
+            hot_phys_idx.stride(2),
+            pool.k_base_pool.stride(0),
+            pool.k_base_pool.stride(1),
+            pool.k_base_pool.stride(2),
+            pool.k_base_pool.stride(3),
+            pool.k_min_pool.stride(0),
+            pool.k_min_pool.stride(1),
+            pool.k_min_pool.stride(2),
+            pool.v_min_pool.stride(0),
+            pool.v_min_pool.stride(1),
+            pool.v_min_pool.stride(2),
+            part_m.stride(0),
+            part_m.stride(1),
+            part_m.stride(2),
+            part_o.stride(0),
+            part_o.stride(1),
+            part_o.stride(2),
+            part_o.stride(3),
+            scaling,
+            num_splits_hot,
+            0,
+            max_hot,
+            H_kv=h_kv,
+            G=grp,
+            D4=d4,
+            PAGE_SIZE=page_size,
+            BLOCK_G=block_g,
+            BLOCK_D4=block_d4,
+            UNIFORM_N_SEL=uniform_batch,
+            num_warps=4,
+        )
+
+    if max_warm > 0:
+        _paged_indexed_base2_splitkv_kernel[(bsz * h_kv, num_splits_warm)](
+            q_c,
+            warm_phys_idx,
+            n_warm_t,
+            pool.k_base_pool,
+            pool.k_min_pool,
+            pool.k_scale_pool,
+            pool.v_base_pool,
+            pool.v_min_pool,
+            pool.v_scale_pool,
+            part_m,
+            part_l,
+            part_o,
+            q_c.stride(0),
+            q_c.stride(1),
+            q_c.stride(2),
+            warm_phys_idx.stride(0),
+            warm_phys_idx.stride(1),
+            warm_phys_idx.stride(2),
+            pool.k_base_pool.stride(0),
+            pool.k_base_pool.stride(1),
+            pool.k_base_pool.stride(2),
+            pool.k_base_pool.stride(3),
+            pool.k_min_pool.stride(0),
+            pool.k_min_pool.stride(1),
+            pool.k_min_pool.stride(2),
+            pool.v_min_pool.stride(0),
+            pool.v_min_pool.stride(1),
+            pool.v_min_pool.stride(2),
+            part_m.stride(0),
+            part_m.stride(1),
+            part_m.stride(2),
+            part_o.stride(0),
+            part_o.stride(1),
+            part_o.stride(2),
+            part_o.stride(3),
+            scaling,
+            num_splits_warm,
+            num_splits_hot,
+            max_warm,
+            H_kv=h_kv,
+            G=grp,
+            D4=d4,
+            PAGE_SIZE=page_size,
+            BLOCK_G=block_g,
+            BLOCK_D4=block_d4,
+            UNIFORM_N_SEL=uniform_batch,
+            num_warps=4,
+        )
+
+    out_fp32 = torch.empty((bsz, 1, h_q, head_dim), dtype=torch.float32, device=device)
+    out_v = out_fp32.squeeze(1)
+    _splitk_reduce_kernel[(bsz * h_q,)](
+        part_m,
+        part_l,
+        part_o,
+        tail_m,
+        tail_l,
+        tail_o,
+        out_v,
+        part_m.stride(0),
+        part_m.stride(1),
+        part_m.stride(2),
+        part_o.stride(0),
+        part_o.stride(1),
+        part_o.stride(2),
+        part_o.stride(3),
+        tail_m.stride(0),
+        tail_m.stride(1),
+        tail_o.stride(0),
+        tail_o.stride(1),
+        tail_o.stride(2),
+        out_v.stride(0),
+        out_v.stride(1),
+        out_v.stride(2),
+        total_splits,
+        H_q=h_q,
+        HEAD_DIM=head_dim,
+        BLOCK_D=block_d,
+        HAS_TAIL=has_tail,
+    )
+    out = out_fp32.to(query.dtype)
+
+    if return_stats:
+        tot_p = max(1, sum(num_pages_host))
+        hot_r = float(sum(n_hot_list)) / tot_p
+        warm_r = float(sum(n_warm_list)) / tot_p
+        skip_r = max(0.0, 1.0 - hot_r - warm_r)
+        lrb = compute_logical_read_bits_per_kv_elem(
+            "bitplane_dualstream", hot_ratio=hot_r, warm_ratio=warm_r, skip_ratio=skip_r,
+            head_dim=head_dim, page_size=page_size,
+        )
+        return out, {
+            "hot_ratio": hot_r,
+            "warm_ratio": warm_r,
+            "skip_ratio": skip_r,
+            "phys_read_bits": lrb,
+            "logical_read_bits_per_kv_elem": lrb,
+            "eff_bits_per_elem": lrb,
             "num_splits_hot": num_splits_hot,
             "num_splits_warm": num_splits_warm,
         }

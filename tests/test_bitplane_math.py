@@ -9,6 +9,7 @@ import math
 import torch
 
 from bitplane_attn.quant_bitplane import (
+    compute_logical_read_bits_per_kv_elem,
     paged_bitplane_attention_decode,
     quantize_nested_4bit_bitplane,
 )
@@ -53,7 +54,9 @@ def test_bitplane_boundary_degeneracy() -> None:
     )
     diff_100 = float((out_int4 - out_bp100).abs().max().item())
     assert diff_100 < 1e-5, f"ratio=1.0 应精确退化为 int4，实际误差={diff_100}"
-    assert abs(st_bp100["eff_bits_per_elem"] - 4.0) < 1e-6
+    exp_int4_bits = compute_logical_read_bits_per_kv_elem("int4", head_dim=head_dim, page_size=32)
+    assert abs(st_bp100["logical_read_bits_per_kv_elem"] - exp_int4_bits) < 1e-6
+    assert abs(st_bp100["eff_bits_per_elem"] - exp_int4_bits) < 1e-6
 
     out_base2, _ = paged_bitplane_attention_decode(
         q, k, v, scaling, mode="base2", page_size=32, recent_tokens=32
@@ -63,7 +66,9 @@ def test_bitplane_boundary_degeneracy() -> None:
     )
     diff_0 = float((out_base2 - out_bp0).abs().max().item())
     assert diff_0 < 1e-5, f"ratio=0.0 应精确退化为 base2，实际误差={diff_0}"
-    assert abs(st_bp0["eff_bits_per_elem"] - 2.0) < 1e-6
+    exp_base2_bits = compute_logical_read_bits_per_kv_elem("base2", head_dim=head_dim, page_size=32)
+    assert abs(st_bp0["logical_read_bits_per_kv_elem"] - exp_base2_bits) < 1e-6
+    assert abs(st_bp0["eff_bits_per_elem"] - exp_base2_bits) < 1e-6
 
 
 def test_causal_zero_leakage_in_chunk_eval() -> None:

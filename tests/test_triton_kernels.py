@@ -17,6 +17,7 @@ from bitplane_attn.packed_cache import (
 )
 from bitplane_attn.quant_bitplane import (
     QuantizedBitPlanePages,
+    compute_logical_read_bits_per_kv_elem,
     paged_bitplane_attention_decode,
 )
 from bitplane_attn.triton_kernels import (
@@ -143,10 +144,12 @@ def test_triton_bitplane_matches_reference_and_boundaries(
 
     if top_ratio == 0.0:
         ref_mode = "base2"
-        assert abs(st["eff_bits_per_elem"] - 2.0) < 1e-6
+        exp_b = compute_logical_read_bits_per_kv_elem("base2", head_dim=head_dim, page_size=32)
+        assert abs(st["logical_read_bits_per_kv_elem"] - exp_b) < 1e-6
     elif top_ratio == 1.0:
         ref_mode = "int4"
-        assert abs(st["eff_bits_per_elem"] - 4.0) < 1e-6
+        exp_b = compute_logical_read_bits_per_kv_elem("int4", head_dim=head_dim, page_size=32)
+        assert abs(st["logical_read_bits_per_kv_elem"] - exp_b) < 1e-6
     else:
         ref_mode = "bitplane"
 

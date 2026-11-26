@@ -25,6 +25,59 @@ from typing import Any
 import torch
 
 
+def compute_logical_read_bits_per_kv_elem(
+    mode: str,
+    hot_ratio: float = 1.0,
+    warm_ratio: float = 0.0,
+    skip_ratio: float = 0.0,
+    head_dim: int = 128,
+    page_size: int = 32,
+) -> float:
+    """
+    按每 KV 标量元素（bits / KV-elem，即单次解码理论逻辑读取总比特 / (2 * L * d)）统一核算读带宽。
+
+    注：此处全部精确包含页尺度 float16 元数据：
+      - k_meta = (2 * d * 16) / (2 * S * d) = 16.0 / page_size  （S=32 时为 0.50 bits/KV-elem）
+      - v_meta = (2 * S * 16) / (2 * S * d) = 16.0 / head_dim   （d=128 时 0.125；d=256 时 0.0625）
+      - 该指标刻画的是理论逻辑访存流大小，不等价于 GPU 物理 DRAM 硬件事务计数器实测字节数。
+    """
+    k_meta = 16.0 / float(max(1, page_size))
+    v_meta = 16.0 / float(max(1, head_dim))
+    if mode in ("fp16", "bf16"):
+        return 16.0
+    if mode == "int4":
+        return 4.0 + k_meta + v_meta
+    if mode in ("base2", "int2"):
+        return 2.0 + k_meta + v_meta
+    if mode == "bitplane":
+        # Stage 1 全扫 K_base + k_meta (1.0 + k_meta)，Stage 2 对 Hot 读 3.0+v_meta，其余读 1.0+v_meta
+        return 2.0 + k_meta + v_meta + 2.0 * float(hot_ratio)
+    if mode == "bitplane_droptail":
+        return 1.0 + k_meta + float(hot_ratio) * (3.0 + v_meta)
+    if mode == "bitplane_k4_v2":
+        return 2.0 + k_meta + v_meta + float(hot_ratio)
+    if mode == "bitplane_gated":
+        return (
+            float(skip_ratio) * (1.0 + k_meta)
+            + float(warm_ratio) * (2.0 + k_meta + v_meta)
+            + float(hot_ratio) * (4.0 + k_meta + v_meta)
+        )
+    if mode == "bitplane_dualstream":
+        # 路由核全扫 (k_min, k_scale) 占 k_meta；Hot 流读取完整 4-bit 页，Warm 流仅读取 2-bit Base 页
+        return (
+            k_meta
+            + float(hot_ratio) * (4.0 + k_meta + v_meta)
+            + float(warm_ratio) * (2.0 + k_meta + v_meta)
+        )
+    if mode == "quest":
+        return k_meta + 16.0 * float(hot_ratio)
+    if mode == "key_only_int2":
+        return 9.0 + k_meta
+    if mode == "val_only_int2":
+        return 9.0 + v_meta
+    raise ValueError(f"未知的逻辑读取位宽计算模式: {mode}")
+
+
 @dataclass
 class QuantizedBitPlanePages:
     """保存历史整页 Key/Value 的嵌套双位面及均匀 2-bit 表示（以浮点重构张量与整数位面共同校验）。"""
@@ -190,6 +243,7 @@ def paged_bitplane_attention_decode(
     warm_ratio: float = 0.35,
     ellipsoid_beta: float = 1.5,
     pin_page0: bool = True,
+    score_mode: str = "anisotropic",
 ) -> tuple[torch.Tensor, dict[str, Any]]:
     """
     两阶段查询感知页级解码核心算子（支持全部对比基线与消融模式）。
@@ -201,14 +255,14 @@ def paged_bitplane_attention_decode(
         scaling: 注意力缩放因子（通常为 1 / sqrt(d)）
         attention_mask: 可选外部加性因果/填充掩码 (B, 1/H_q, L_q, L_k)
         mode: 解码模式，可选：
-            - "fp16"：全精对照上限
+            - "fp16" / "bf16"：全精对照上限
             - "int4"：历史整页统一 4-bit
             - "int2"：历史整页统一标准 INT2
             - "base2"：历史整页统一使用无偏 2-bit Base 位面
             - "quest"：Quest Min-Max 估计选 Top-k 页读全精，其余页丢弃为 -inf
             - "bitplane"：2-bit Base 全扫打分 + Top-k 页恢复 4-bit + 未选中页保留 2-bit 长尾保底
             - "bitplane_gated"：单 Pass 静态锚点门控（Hot读4-bit / Warm读2-bit Base / Skip跳过V）
-            - "bitplane_dualstream"：零额外元数据椭球统计路由 + 零分支双流解码（Hot 4-bit / Warm 2-bit / Skip）
+            - "bitplane_dualstream"：零额外元数据各向异性页排序启发式路由 + 零分支双流解码
             - "bitplane_droptail"：2-bit Base 选 Top-k 页恢复 4-bit，未选中页丢弃为 -inf（消融）
             - "key_only_int2"：历史 K 用 INT2，V 保持全精（诊断 K/V 敏感度）
             - "val_only_int2"：历史 K 保持全精，V 用 INT2（诊断 K/V 敏感度）
@@ -221,6 +275,7 @@ def paged_bitplane_attention_decode(
         routing: Bit-Plane Stage 1 页路由打分准则 ("page_max" | "page_mass")
         gqa_shared: 是否按 GQA KV 组共享选出同一套 Top-k 页（True 消除组内膨胀）
         pages_cache: 可选预计算好的量化页对象以复用跨步解码开销
+        score_mode: `bitplane_dualstream` 页排序策略 ("anisotropic" | "center" | "box_l1" | "ellipsoid")
 
     Returns:
         (attn_output, stats_dict)
@@ -257,8 +312,8 @@ def paged_bitplane_attention_decode(
 
     num_pages = hist_len_eff // page_size
 
-    # 若 mode == "fp16" 或无完整历史页，直接走原生全精注意力路径
-    if mode == "fp16" or num_pages == 0:
+    # 若 mode == "fp16"/"bf16" 或无完整历史页，直接走原生全精注意力路径
+    if mode in ("fp16", "bf16") or num_pages == 0:
         k_full = _repeat_kv_tensor(key, grp).float()
         v_full = _repeat_kv_tensor(value, grp).float()
         q_fp32 = query.float()
@@ -268,10 +323,11 @@ def paged_bitplane_attention_decode(
         return out, {
             "hist_len": hist_len_eff,
             "num_pages": num_pages,
-            "selected_ratio": 1.0 if mode == "fp16" else 0.0,
-            "union_ratio": 1.0 if mode == "fp16" else 0.0,
+            "selected_ratio": 1.0 if mode in ("fp16", "bf16") else 0.0,
+            "union_ratio": 1.0 if mode in ("fp16", "bf16") else 0.0,
             "union_inflation": 1.0,
             "eff_bits_per_elem": 16.0,
+            "logical_read_bits_per_kv_elem": 16.0,
         }
 
     # 构建或复用历史整页量化表（纯前缀只读）
@@ -309,53 +365,63 @@ def paged_bitplane_attention_decode(
     # 1) 全历史统一量化静态模式：int4 / int2 / base2 / key_only_int2 / val_only_int2
     if mode == "int4":
         out = _finish_attention(pages.k_int4, pages.v_int4)
+        lrb = compute_logical_read_bits_per_kv_elem("int4", head_dim=head_dim, page_size=page_size)
         return out, {
             "hist_len": hist_len_eff,
             "num_pages": num_pages,
             "selected_ratio": 1.0,
             "union_ratio": 1.0,
             "union_inflation": 1.0,
-            "eff_bits_per_elem": 4.0,
+            "eff_bits_per_elem": lrb,
+            "logical_read_bits_per_kv_elem": lrb,
         }
     if mode == "int2":
         out = _finish_attention(pages.k_int2, pages.v_int2)
+        lrb = compute_logical_read_bits_per_kv_elem("int2", head_dim=head_dim, page_size=page_size)
         return out, {
             "hist_len": hist_len_eff,
             "num_pages": num_pages,
             "selected_ratio": 0.0,
             "union_ratio": 0.0,
             "union_inflation": 1.0,
-            "eff_bits_per_elem": 2.0,
+            "eff_bits_per_elem": lrb,
+            "logical_read_bits_per_kv_elem": lrb,
         }
     if mode == "base2":
         out = _finish_attention(pages.k_base, pages.v_base)
+        lrb = compute_logical_read_bits_per_kv_elem("base2", head_dim=head_dim, page_size=page_size)
         return out, {
             "hist_len": hist_len_eff,
             "num_pages": num_pages,
             "selected_ratio": 0.0,
             "union_ratio": 0.0,
             "union_inflation": 1.0,
-            "eff_bits_per_elem": 2.0,
+            "eff_bits_per_elem": lrb,
+            "logical_read_bits_per_kv_elem": lrb,
         }
     if mode == "key_only_int2":
         out = _finish_attention(pages.k_int2, value[:, :, :hist_len_eff, :])
+        lrb = compute_logical_read_bits_per_kv_elem("key_only_int2", head_dim=head_dim, page_size=page_size)
         return out, {
             "hist_len": hist_len_eff,
             "num_pages": num_pages,
             "selected_ratio": 0.0,
             "union_ratio": 0.0,
             "union_inflation": 1.0,
-            "eff_bits_per_elem": 9.0,  # (2-bit K + 16-bit V) / 2
+            "eff_bits_per_elem": lrb,
+            "logical_read_bits_per_kv_elem": lrb,
         }
     if mode == "val_only_int2":
         out = _finish_attention(key[:, :, :hist_len_eff, :], pages.v_int2)
+        lrb = compute_logical_read_bits_per_kv_elem("val_only_int2", head_dim=head_dim, page_size=page_size)
         return out, {
             "hist_len": hist_len_eff,
             "num_pages": num_pages,
             "selected_ratio": 0.0,
             "union_ratio": 0.0,
             "union_inflation": 1.0,
-            "eff_bits_per_elem": 9.0,  # (16-bit K + 2-bit V) / 2
+            "eff_bits_per_elem": lrb,
+            "logical_read_bits_per_kv_elem": lrb,
         }
 
     # 计算当前配额需要选中的历史页数 top_k
@@ -406,14 +472,15 @@ def paged_bitplane_attention_decode(
         )
         quest_hist_mask = torch.where(tok_keep_mask, mask_hist, torch.full_like(mask_hist, neg_inf))
         out = _finish_attention(key[:, :, :hist_len_eff, :], value[:, :, :hist_len_eff, :], quest_hist_mask)
+        lrb = compute_logical_read_bits_per_kv_elem("quest", hot_ratio=union_ratio, head_dim=head_dim, page_size=page_size)
         return out, {
             "hist_len": hist_len_eff,
             "num_pages": num_pages,
             "selected_ratio": actual_top_ratio,
             "union_ratio": union_ratio,
             "union_inflation": inflation,
-            # Quest 读入并集全精页（16 bit/elem）
-            "eff_bits_per_elem": 16.0 * union_ratio,
+            "eff_bits_per_elem": lrb,
+            "logical_read_bits_per_kv_elem": lrb,
         }
 
     # 3) Single-Pass Anchor-Gated Bit-Plane 模式
@@ -450,7 +517,10 @@ def paged_bitplane_attention_decode(
         hot_ratio = float(is_hot_g.float().mean().item())
         warm_ratio = float(is_warm_g.float().mean().item())
         skip_ratio = float(is_skip_g.float().mean().item())
-        phys_read_bits = 3.0 * skip_ratio + 5.25 * warm_ratio + 9.25 * hot_ratio
+        lrb = compute_logical_read_bits_per_kv_elem(
+            "bitplane_gated", hot_ratio=hot_ratio, warm_ratio=warm_ratio, skip_ratio=skip_ratio,
+            head_dim=head_dim, page_size=page_size,
+        )
 
         def _expand_to_tokens(mask_g: torch.Tensor) -> torch.Tensor:
             return (
@@ -481,14 +551,15 @@ def paged_bitplane_attention_decode(
             "hot_ratio": hot_ratio,
             "warm_ratio": warm_ratio,
             "skip_ratio": skip_ratio,
-            "phys_read_bits": phys_read_bits,
+            "phys_read_bits": lrb,
+            "logical_read_bits_per_kv_elem": lrb,
             "selected_ratio": hot_ratio,
             "union_ratio": hot_ratio,
             "union_inflation": 1.0,
-            "eff_bits_per_elem": phys_read_bits,
+            "eff_bits_per_elem": lrb,
         }
 
-    # 3B) Ellipsoid-Routed Dual-Stream Bit-Plane 模式（零额外元数据路由 + 零分支双流语义）
+    # 3B) 各向异性页排序启发式路由双流 Bit-Plane 模式（零额外元数据路由 + 零分支双流语义）
     if mode == "bitplane_dualstream":
         if hot_ratio <= 0.0:
             n_hot = 0
@@ -502,7 +573,7 @@ def paged_bitplane_attention_decode(
         if n_keep <= 0:
             raise ValueError("hot_ratio 与 warm_ratio 不能同时为 0")
 
-        # 直接复用页元数据 (k_min, k_scale) 构造页中心与各向异性半径，零额外存储
+        # 复用已有页元数据 (k_min, k_scale) 构造页中心与半宽（零额外索引内存开销）
         k_min_p = pages.k_page_min.float()
         k_scale_p = torch.clamp(pages.k_page_max.float() - k_min_p, min=0.0) / 15.0
         k_mid = k_min_p + 7.5 * k_scale_p
@@ -510,10 +581,20 @@ def paged_bitplane_attention_decode(
 
         q_g = q_fp32.view(bsz, h_kv, grp, lq, head_dim) * scaling
         mu = torch.einsum("bhgtd,bhpd->bhgtp", q_g, k_mid)
-        var = torch.einsum("bhgtd,bhpd->bhgtp", q_g * q_g, k_rad * k_rad)
-        u = mu + ellipsoid_beta * torch.sqrt(torch.clamp(var, min=0.0))
+        s_mode = score_mode.lower()
+        if s_mode == "center" or (s_mode in ("anisotropic", "ellipsoid") and float(ellipsoid_beta) <= 0.0):
+            u = mu
+        elif s_mode in ("anisotropic", "ellipsoid"):
+            var = torch.einsum("bhgtd,bhpd->bhgtp", q_g * q_g, k_rad * k_rad)
+            u = mu + ellipsoid_beta * torch.sqrt(torch.clamp(var, min=0.0))
+        elif s_mode == "box_l1":
+            u = mu + torch.einsum("bhgtd,bhpd->bhgtp", torch.abs(q_g), k_rad)
+        else:
+            raise ValueError(f"不支持的 score_mode: {score_mode}")
+
         u_rel = u - u.max(dim=-1, keepdim=True).values
-        grp_scores = u_rel.max(dim=2).values  # (B, H_kv, L_q, P)
+        # 使用极小量 GQA 组内概率密度和作为次级确定性平局消解项，避免多头各排第一时 max 出现 0.0 平局
+        grp_scores = u_rel.max(dim=2).values + 1e-5 * torch.exp(u_rel).sum(dim=2)  # (B, H_kv, L_q, P)
         if pin_page0 and num_pages > 0:
             grp_scores = grp_scores.clone()
             grp_scores[:, :, :, 0] = 1e9
@@ -563,19 +644,25 @@ def paged_bitplane_attention_decode(
         actual_hot_r = n_hot / num_pages
         actual_warm_r = n_warm / num_pages
         actual_skip_r = max(0.0, 1.0 - actual_hot_r - actual_warm_r)
-        # 1.0 bit 路由元信息扫描 + Hot 页 4-bit(9.25b) + Warm 页 Base2(5.25b)
-        phys_bits = 1.0 + 9.25 * actual_hot_r + 5.25 * actual_warm_r
+        if n_hot == num_pages:
+            lrb = compute_logical_read_bits_per_kv_elem("int4", head_dim=head_dim, page_size=page_size)
+        else:
+            lrb = compute_logical_read_bits_per_kv_elem(
+                "bitplane_dualstream", hot_ratio=actual_hot_r, warm_ratio=actual_warm_r, skip_ratio=actual_skip_r,
+                head_dim=head_dim, page_size=page_size,
+            )
         return out_total, {
             "hist_len": hist_len_eff,
             "num_pages": num_pages,
             "hot_ratio": actual_hot_r,
             "warm_ratio": actual_warm_r,
             "skip_ratio": actual_skip_r,
-            "phys_read_bits": phys_bits,
+            "phys_read_bits": lrb,
+            "logical_read_bits_per_kv_elem": lrb,
             "selected_ratio": actual_hot_r,
             "union_ratio": actual_hot_r,
             "union_inflation": 1.0,
-            "eff_bits_per_elem": phys_bits,
+            "eff_bits_per_elem": lrb,
         }
 
     # 4) Bit-Plane 主方法与核心消融：bitplane / bitplane_droptail / bitplane_k4_v2
@@ -644,18 +731,17 @@ def paged_bitplane_attention_decode(
     if mode == "bitplane_k4_v2":
         v_int2_hq = _repeat_kv_tensor(pages.v_int2, grp).float()
         out_hist = torch.matmul(p_hist, v_int2_hq)
-        eff_bits = 2.0 + 1.0 * union_ratio  # 仅对 Top-k 页加读 K 残差，V 全走 2-bit
+        eff_bits = compute_logical_read_bits_per_kv_elem("bitplane_k4_v2", hot_ratio=union_ratio, head_dim=head_dim, page_size=page_size)
     elif mode == "bitplane_droptail":
         # 仅选中页参与输出；未选中页 p_hist 已接近 0
         out_hist = torch.matmul(p_hist, v_int4_hq)
-        eff_bits = 4.0 * union_ratio
+        eff_bits = compute_logical_read_bits_per_kv_elem("bitplane_droptail", hot_ratio=union_ratio, head_dim=head_dim, page_size=page_size)
     else:
         # 标准 Bit-Plane：入选页概率质量走 V_int4，未入选长尾页概率质量走 V_base
         p_sel = torch.where(tok_sel_mask, p_hist, torch.zeros_like(p_hist))
         p_unsel = torch.where(tok_sel_mask, torch.zeros_like(p_hist), p_hist)
         out_hist = torch.matmul(p_sel, v_int4_hq) + torch.matmul(p_unsel, v_base_hq)
-        # 总 HBM 读带宽：2-bit Base 全扫 + Top-k 页并集额外读取 2-bit Residual
-        eff_bits = 2.0 + 2.0 * union_ratio
+        eff_bits = compute_logical_read_bits_per_kv_elem("bitplane", hot_ratio=union_ratio, head_dim=head_dim, page_size=page_size)
 
     out_total = (out_hist + torch.matmul(p_tail, v_tail_full)).transpose(1, 2).contiguous().to(query.dtype)
     return out_total, {
@@ -665,6 +751,7 @@ def paged_bitplane_attention_decode(
         "union_ratio": union_ratio,
         "union_inflation": inflation,
         "eff_bits_per_elem": eff_bits,
+        "logical_read_bits_per_kv_elem": eff_bits,
     }
 
 
