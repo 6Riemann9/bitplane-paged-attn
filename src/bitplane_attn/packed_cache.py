@@ -535,6 +535,12 @@ class PagedBitPlaneKVPool:
             out.append(blk)
         return out
 
+    def _unbind_prefix_key(self, blk: int) -> None:
+        """解除物理块 `blk` 与 `prefix_table` 的双向哈希绑定，防止原地覆写污染前缀缓存。"""
+        p_key = self._block_prefix_key.pop(blk, None)
+        if p_key is not None and self.prefix_table.get(p_key) == blk:
+            self.prefix_table.pop(p_key, None)
+
     def _release_block(self, blk: int) -> None:
         """递减物理块引用计数，归零时解除前缀哈希绑定并归还空闲列表。"""
         cnt = self.ref_counts[blk]
@@ -543,9 +549,7 @@ class PagedBitPlaneKVPool:
         cnt -= 1
         self.ref_counts[blk] = cnt
         if cnt == 0:
-            p_key = self._block_prefix_key.pop(blk, None)
-            if p_key is not None and self.prefix_table.get(p_key) == blk:
-                self.prefix_table.pop(p_key, None)
+            self._unbind_prefix_key(blk)
             self.free_blocks.append(blk)
 
     def _write_packed_to_blocks(self, blocks: list[int], packed: dict[str, torch.Tensor]) -> None:
@@ -613,11 +617,14 @@ class PagedBitPlaneKVPool:
     def copy_on_write(self, seq_id: int, logical_page_idx: int) -> int:
         """
         执行 Copy-on-Write (CoW)：当指定逻辑页对应的物理块被多条序列共享 (`ref > 1`) 时，
-        分配独占物理块并深拷贝原位面与页元数据，保证其他共享序列绝对不可变。
+        分配独占物理块并深拷贝原位面与页元数据，保证其他共享序列绝对不可变；
+        当唯一引用 (`ref <= 1`) 将被原地修改时，立即解除原物理块的前缀哈希绑定防止污染 Prefix Cache。
         """
         seq = self.sequences[seq_id]
         old_blk = seq.block_ids[logical_page_idx]
         if self.ref_counts[old_blk] <= 1:
+            self._unbind_prefix_key(old_blk)
+            self._epoch += 1
             return old_blk
 
         new_blk = self._alloc_blocks(1)[0]
@@ -636,8 +643,9 @@ class PagedBitPlaneKVPool:
         key_page: torch.Tensor,
         value_page: torch.Tensor,
     ) -> int:
-        """先触发 Copy-on-Write，再原地量化打包覆盖指定逻辑页内容。"""
+        """先触发 Copy-on-Write（并解除前缀哈希绑定），再原地量化打包覆盖指定逻辑页内容。"""
         blk = self.copy_on_write(seq_id, logical_page_idx)
+        self._unbind_prefix_key(blk)
         kp = key_page.view(1, self.num_kv_heads, self.page_size, self.head_dim)
         vp = value_page.view(1, self.num_kv_heads, self.page_size, self.head_dim)
         packed = _quantize_pages_to_packed(kp, vp)

@@ -465,3 +465,248 @@ def test_real_qwen_bitplane_dynamic_cache_optional() -> None:
         del model35, bp35
         gc.collect()
         torch.cuda.empty_cache()
+
+
+def test_prefix_cache_invalidation_on_single_ref_inplace_write() -> None:
+    """P0 回归测试：单引用 (`ref_count == 1`) 原地修改物理页时必须解除旧哈希绑定，禁止新序列读到被篡改的脏数据。"""
+    torch.manual_seed(7501)
+    h_kv, d = 4, 128
+    k_orig = torch.randn((1, h_kv, 64, d), device="cuda:0", dtype=torch.float16)
+    v_orig = torch.randn((1, h_kv, 64, d), device="cuda:0", dtype=torch.float16)
+
+    pool = PagedBitPlaneKVPool(num_kv_heads=h_kv, head_dim=d, page_size=32, capacity=8, kv_dtype=torch.float16, device="cuda:0")
+    seq_a = pool.allocate_sequence()
+    pk_h = b"prefix-page-0-hash"
+    pool.append_kv(seq_a, k_orig, v_orig, recent_tokens=32, prefix_keys=[pk_h])
+
+    blk_p = pool.sequences[seq_a].block_ids[0]
+    assert pool.ref_counts[blk_p] == 1
+    assert pool.prefix_table.get(pk_h) == blk_p
+
+    # 对唯一引用的第 0 页执行 write_page 原地覆写新内容
+    k_mut = torch.randn((1, h_kv, 32, d), device="cuda:0", dtype=torch.float16) * 4.0
+    v_mut = torch.randn((1, h_kv, 32, d), device="cuda:0", dtype=torch.float16) * 4.0
+    blk_after = pool.write_page(seq_a, 0, k_mut, v_mut)
+    assert blk_after == blk_p
+    assert pool.ref_counts[blk_p] == 1
+    # 原哈希 H 必须已失效，不能再命中已被修改的物理块 P
+    assert pk_h not in pool.prefix_table
+    assert blk_p not in pool._block_prefix_key
+
+    # 新建序列 B 携带旧哈希 H 与原 KV 追加，不得命中 seq_a 的脏物理块，且各自解码/解包数据完全独立正确
+    seq_b = pool.allocate_sequence()
+    pool.append_kv(seq_b, k_orig, v_orig, recent_tokens=32, prefix_keys=[pk_h])
+    blk_b = pool.sequences[seq_b].block_ids[0]
+    assert blk_b != blk_p
+    assert pool.prefix_table.get(pk_h) == blk_b
+    assert not torch.equal(pool.unpack_sequence(seq_a)["k_int4"], pool.unpack_sequence(seq_b)["k_int4"])
+
+    # 验证直接使用 copy_on_write(ref==1) 也会预先解绑前缀哈希
+    blk_b_cow = pool.copy_on_write(seq_b, 0)
+    assert blk_b_cow == blk_b
+    assert pk_h not in pool.prefix_table
+
+    pool.free_sequence(seq_a)
+    pool.free_sequence(seq_b)
+    assert len(pool.free_blocks) == pool.capacity
+    assert len(pool.prefix_table) == 0
+
+
+def test_hf_left_padding_batch_attention_mask_correctness() -> None:
+    """P0 回归测试：验证不等长 Left-Padding Batch 下 Decode Mask 语义与 strict_mask=True 显式报错。"""
+    torch.manual_seed(7502)
+    device = torch.device("cuda:0")
+    cfg = Qwen3Config(
+        vocab_size=256,
+        hidden_size=128,
+        intermediate_size=256,
+        num_hidden_layers=2,
+        num_attention_heads=8,
+        num_key_value_heads=2,
+        head_dim=64,
+        max_position_embeddings=512,
+    )
+    model = Qwen3ForCausalLM(cfg).to(device=device, dtype=torch.bfloat16).eval()
+
+    # 序列 0 有效长度 96（左侧填充 64 个 token 0），序列 1 有效长度 160
+    s0_valid = torch.randint(10, 200, (1, 96), device=device, dtype=torch.long)
+    s1_valid = torch.randint(10, 200, (1, 160), device=device, dtype=torch.long)
+    pad_left = torch.zeros((1, 64), device=device, dtype=torch.long)
+    s0_padded = torch.cat([pad_left, s0_valid], dim=1)
+    batch_ids = torch.cat([s0_padded, s1_valid], dim=0)
+    batch_mask = torch.cat(
+        [
+            torch.cat([torch.zeros((1, 64), device=device, dtype=torch.long), torch.ones((1, 96), device=device, dtype=torch.long)], dim=1),
+            torch.ones((1, 160), device=device, dtype=torch.long),
+        ],
+        dim=0,
+    )
+    next_tok = torch.randint(10, 200, (2, 1), device=device, dtype=torch.long)
+
+    # 1) 单样本无 padding 对照（同模式 BitPlane triton_int4 与 Native BF16）
+    nat_s0 = DynamicCache(config=model.config)
+    with torch.no_grad():
+        model(input_ids=s0_valid, cache=nat_s0, use_cache=True)
+        out_nat_s0 = model(input_ids=next_tok[0:1], cache=nat_s0, use_cache=True).logits[0, -1, :].float()
+
+    bp_i4_single = BitPlaneDynamicCache(config=model.config, page_size=32, recent_tokens=32, mode="triton_int4")
+    with bp_i4_single.attach(model), torch.no_grad():
+        model(input_ids=s0_valid, cache=bp_i4_single, use_cache=True)
+        out_i4_s0_single = model(input_ids=next_tok[0:1], cache=bp_i4_single, use_cache=True).logits[0, -1, :].float()
+
+    # 2) Batch Left-padding + BitPlane triton_int4：验证掩码被真实应用，且序列 0 结果精确一致于无 padding 单样本推理
+    bp_i4_batch = BitPlaneDynamicCache(config=model.config, page_size=32, recent_tokens=32, mode="triton_int4")
+    pos_pref = batch_mask.long().cumsum(-1) - 1
+    pos_pref.masked_fill_(batch_mask == 0, 0)
+    pos_dec = batch_mask.sum(dim=-1, keepdim=True).long()
+    full_dec_mask = torch.cat([batch_mask, torch.ones((2, 1), device=device, dtype=torch.long)], dim=1)
+
+    with bp_i4_batch.attach(model), torch.no_grad():
+        model(input_ids=batch_ids, attention_mask=batch_mask, position_ids=pos_pref, cache=bp_i4_batch, use_cache=True)
+        out_bp_i4 = model(
+            input_ids=next_tok,
+            attention_mask=full_dec_mask,
+            position_ids=pos_dec,
+            cache=bp_i4_batch,
+            use_cache=True,
+        )
+    diff_i4_exact = float((out_bp_i4.logits[0, -1, :].float() - out_i4_s0_single).abs().max().item())
+    diff_i4_nat = float((out_bp_i4.logits[0, -1, :].float() - out_nat_s0).abs().max().item())
+    assert diff_i4_exact < 1.5e-2, f"Left-padding Batch vs 单样本同模式差异过大（疑忽略 Mask）: {diff_i4_exact}"
+    assert diff_i4_nat < 5e-2, f"Left-padding Batch vs Native BF16 差异过大: {diff_i4_nat}"
+
+    # 3) Batch Left-padding + BitPlane triton_dualstream：无 NaN，且严格对齐原生 Left-padding DynamicCache
+    nat_batch = DynamicCache(config=model.config)
+    with torch.no_grad():
+        model(input_ids=batch_ids, attention_mask=batch_mask, position_ids=pos_pref, cache=nat_batch, use_cache=True)
+        out_nat_batch = model(
+            input_ids=next_tok, attention_mask=full_dec_mask, position_ids=pos_dec, cache=nat_batch, use_cache=True
+        )
+    bp_ds_batch = BitPlaneDynamicCache(
+        config=model.config, page_size=32, recent_tokens=32, mode="triton_dualstream", hot_ratio=0.5, warm_ratio=0.5
+    )
+    with bp_ds_batch.attach(model), torch.no_grad():
+        model(input_ids=batch_ids, attention_mask=batch_mask, position_ids=pos_pref, cache=bp_ds_batch, use_cache=True)
+        out_bp_ds = model(
+            input_ids=next_tok, attention_mask=full_dec_mask, position_ids=pos_dec, cache=bp_ds_batch, use_cache=True
+        )
+    assert not torch.isnan(out_bp_ds.logits).any()
+    diff_ds_s0 = float((out_bp_ds.logits[0, -1, :].float() - out_nat_batch.logits[0, -1, :].float()).abs().max().item())
+    assert diff_ds_s0 < 3e-2, f"Left-padding Batch DualStream 误差过大: {diff_ds_s0}"
+
+    # 4) strict_mask=True 遇到非平凡 Mask 时必须显式报错
+    bp_strict = BitPlaneDynamicCache(config=model.config, page_size=32, recent_tokens=32, strict_mask=True)
+    with bp_strict.attach(model), torch.no_grad():
+        model(input_ids=batch_ids, attention_mask=batch_mask, position_ids=pos_pref, cache=bp_strict, use_cache=True)
+        with pytest.raises(NotImplementedError):
+            model(input_ids=next_tok, attention_mask=full_dec_mask, position_ids=pos_dec, cache=bp_strict, use_cache=True)
+
+
+def test_hf_chunked_prefill_matches_single_prefill() -> None:
+    """回归测试：验证分块 Chunked Prefill (logits_to_keep=1) 后解码输出与单次 Prefill 一致。"""
+    torch.manual_seed(7503)
+    device = torch.device("cuda:0")
+    cfg = Qwen3Config(
+        vocab_size=256,
+        hidden_size=128,
+        intermediate_size=256,
+        num_hidden_layers=2,
+        num_attention_heads=8,
+        num_key_value_heads=2,
+        head_dim=64,
+        max_position_embeddings=512,
+    )
+    model = Qwen3ForCausalLM(cfg).to(device=device, dtype=torch.bfloat16).eval()
+    pref_ids = torch.randint(1, 200, (1, 256), device=device, dtype=torch.long)
+    dec_tok = torch.randint(1, 200, (1, 1), device=device, dtype=torch.long)
+
+    c_full = BitPlaneDynamicCache(config=model.config, page_size=32, recent_tokens=32, hot_ratio=0.25, warm_ratio=0.5)
+    with c_full.attach(model), torch.no_grad():
+        model(input_ids=pref_ids, cache=c_full, use_cache=True, logits_to_keep=1)
+        out_full = model(input_ids=dec_tok, cache=c_full, use_cache=True).logits[:, -1, :].float()
+
+    c_chunk = BitPlaneDynamicCache(config=model.config, page_size=32, recent_tokens=32, hot_ratio=0.25, warm_ratio=0.5)
+    with c_chunk.attach(model), torch.no_grad():
+        model(input_ids=pref_ids[:, :128], cache=c_chunk, use_cache=True, logits_to_keep=1)
+        model(input_ids=pref_ids[:, 128:], cache=c_chunk, use_cache=True, logits_to_keep=1)
+        out_chunk = model(input_ids=dec_tok, cache=c_chunk, use_cache=True).logits[:, -1, :].float()
+
+    assert c_chunk.get_seq_length() == 257
+    diff = (out_full - out_chunk).abs()
+    max_diff = float(diff.max().item())
+    mean_diff = float(diff.mean().item())
+    assert mean_diff < 2e-2 and max_diff < 8e-2, (
+        f"Chunked Prefill 后 Decode 输出偏差过大: mean={mean_diff}, max={max_diff}"
+    )
+    assert out_full.argmax(dim=-1).item() == out_chunk.argmax(dim=-1).item()
+
+
+def test_concurrent_nested_attach_and_activate_safety() -> None:
+    """P1 回归测试：验证引用计数 attach() 乱序退出不破坏模型配置，以及无状态 activate() 正常工作。"""
+    torch.manual_seed(7504)
+    device = torch.device("cuda:0")
+    cfg = Qwen3Config(
+        vocab_size=256,
+        hidden_size=128,
+        intermediate_size=256,
+        num_hidden_layers=2,
+        num_attention_heads=8,
+        num_key_value_heads=2,
+        head_dim=64,
+        max_position_embeddings=512,
+    )
+    model = Qwen3ForCausalLM(cfg).to(device=device, dtype=torch.bfloat16).eval()
+    orig_impl = model.config._attn_implementation
+
+    c1 = BitPlaneDynamicCache(config=model.config, page_size=32, recent_tokens=32)
+    c2 = BitPlaneDynamicCache(config=model.config, page_size=32, recent_tokens=32)
+
+    cm1 = c1.attach(model)
+    cm2 = c2.attach(model)
+    cm1.__enter__()
+    assert model.config._attn_implementation == "bitplane_paged"
+    cm2.__enter__()
+    assert model.config._attn_implementation == "bitplane_paged"
+    # 故意先退出外层 cm1，再退出内层 cm2（模拟并发异步请求乱序释放）
+    cm1.__exit__(None, None, None)
+    assert model.config._attn_implementation == "bitplane_paged"
+    cm2.__exit__(None, None, None)
+    assert model.config._attn_implementation == orig_impl
+
+    # 验证真实多线程交错 attach 不会造成状态损毁
+    import threading
+    barrier = threading.Barrier(2)
+    errors: list[BaseException] = []
+
+    def _worker(tid: int) -> None:
+        try:
+            ct = BitPlaneDynamicCache(config=model.config, page_size=32, recent_tokens=32)
+            with ct.attach(model):
+                assert model.config._attn_implementation == "bitplane_paged"
+                barrier.wait(timeout=5.0)
+                if tid == 0:
+                    # 线程 0 稍晚退出也不破坏线程 1
+                    pass
+        except BaseException as exc:
+            errors.append(exc)
+
+    t0 = threading.Thread(target=_worker, args=(0,))
+    t1 = threading.Thread(target=_worker, args=(1,))
+    t0.start()
+    t1.start()
+    t0.join()
+    t1.join()
+    assert not errors, f"多线程 attach 异常: {errors}"
+    assert model.config._attn_implementation == orig_impl
+
+    # 验证无状态 activate() 配合预置 attn_implementation="bitplane_paged"
+    model.set_attn_implementation("bitplane_paged")
+    pref = torch.randint(1, 200, (1, 128), device=device, dtype=torch.long)
+    dec = torch.randint(1, 200, (1, 1), device=device, dtype=torch.long)
+    c_act = BitPlaneDynamicCache(config=model.config, page_size=32, recent_tokens=32, collect_stats=True)
+    with c_act.activate(), torch.no_grad():
+        model(input_ids=pref, cache=c_act, use_cache=True)
+        model(input_ids=dec, cache=c_act, use_cache=True)
+    assert len(c_act.read_bits_samples) == 2
+    assert model.config._attn_implementation == "bitplane_paged"
+    model.set_attn_implementation(orig_impl)

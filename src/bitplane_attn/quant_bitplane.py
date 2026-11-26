@@ -292,8 +292,11 @@ def paged_bitplane_attention_decode(
     k_pos = torch.arange(lk, device=query.device)[None, :]
     base_causal = torch.where(k_pos <= q_pos, 0.0, neg_inf).to(torch.float32)[None, None, :, :]
     if attention_mask is not None:
-        # 外部 mask 若为 4D 加性掩码，与严格因果上界取较小值确保零泄露
-        ext_mask = attention_mask.to(torch.float32)
+        # 外部 mask 若为 bool 或 4D 加性掩码，统一转为浮点掩码并与严格因果上界取较小值确保零泄露
+        if attention_mask.dtype == torch.bool:
+            ext_mask = torch.where(attention_mask, 0.0, neg_inf).to(torch.float32)
+        else:
+            ext_mask = attention_mask.to(torch.float32)
         if ext_mask.shape[-2] == lq and ext_mask.shape[-1] == lk:
             base_causal = torch.minimum(base_causal, ext_mask)
 
@@ -595,7 +598,22 @@ def paged_bitplane_attention_decode(
         u_rel = u - u.max(dim=-1, keepdim=True).values
         # 使用极小量 GQA 组内概率密度和作为次级确定性平局消解项，避免多头各排第一时 max 出现 0.0 平局
         grp_scores = u_rel.max(dim=2).values + 1e-5 * torch.exp(u_rel).sum(dim=2)  # (B, H_kv, L_q, P)
-        if pin_page0 and num_pages > 0:
+        # 若存在 padding / 外部屏蔽掩码，屏蔽全为无效 token 的整页并锚定首个有效页（非 Padding 时等价 Page 0）
+        if attention_mask is not None and num_pages > 0:
+            mh_b, mh_h = mask_hist.shape[0], mask_hist.shape[1]
+            pv = (mask_hist > -1e4).view(mh_b, mh_h, lq, num_pages, page_size).any(dim=-1)
+            if mh_h == h_q:
+                pv = pv.view(mh_b, h_kv, grp, lq, num_pages).any(dim=2)
+            page_valid_g = torch.broadcast_to(pv, (bsz, h_kv, lq, num_pages))
+            grp_scores = torch.where(page_valid_g, grp_scores, torch.full_like(grp_scores, -1e9))
+            if pin_page0:
+                grp_scores = grp_scores.clone()
+                has_valid = page_valid_g.any(dim=-1, keepdim=True)
+                first_valid = page_valid_g.to(torch.int64).argmax(dim=-1, keepdim=True)
+                pin_mask = torch.zeros_like(page_valid_g)
+                pin_mask.scatter_(-1, first_valid, has_valid)
+                grp_scores = torch.where(pin_mask, torch.full_like(grp_scores, 1e9), grp_scores)
+        elif pin_page0 and num_pages > 0:
             grp_scores = grp_scores.clone()
             grp_scores[:, :, :, 0] = 1e9
 

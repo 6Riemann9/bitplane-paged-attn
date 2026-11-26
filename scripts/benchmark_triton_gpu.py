@@ -491,11 +491,53 @@ def _build_needles(tokenizer: Any, device: torch.device) -> list[dict[str, Any]]
     return cases
 
 
+def _build_recall_docs(tokenizer: Any, device: torch.device) -> list[dict[str, Any]]:
+    """构造 4 篇异质长上下文语料（文档/Triton核/页池/缓存适配）用于多文档 Attention Mass Recall 消融。"""
+    corpus_paths = [
+        ("README.md", PROJECT_ROOT / "README.md"),
+        ("triton_kernels.py", PROJECT_ROOT / "src" / "bitplane_attn" / "triton_kernels.py"),
+        ("packed_cache.py", PROJECT_ROOT / "src" / "bitplane_attn" / "packed_cache.py"),
+        ("hf_cache_and_quant.py", PROJECT_ROOT / "src" / "bitplane_attn" / "quant_bitplane.py"),
+    ]
+    recall_steps = 16
+    need = PREFIX_LEN + recall_steps
+    docs_out: list[dict[str, Any]] = []
+    for name, fp in corpus_paths:
+        txt = fp.read_text(encoding="utf-8") if fp.exists() else _load_doc_pair()[0]
+        if name == "hf_cache_and_quant.py":
+            hf_fp = PROJECT_ROOT / "src" / "bitplane_attn" / "hf_cache.py"
+            if hf_fp.exists():
+                txt = hf_fp.read_text(encoding="utf-8") + "\n\n" + txt
+        ids = tokenizer.encode(txt, add_special_tokens=False)
+        while len(ids) < need + 64:
+            ids = ids + ids
+        offset = 32 if len(ids) > need + 64 else 0
+        chunk = ids[offset : offset + need]
+        docs_out.append(
+            {
+                "name": name,
+                "prefix_ids": torch.tensor([chunk[:PREFIX_LEN]], dtype=torch.long, device=device),
+                "step_ids": torch.tensor([chunk[PREFIX_LEN:]], dtype=torch.long, device=device),
+            }
+        )
+    return docs_out
+
+
 def run_routing_recall_ablation() -> dict[str, Any]:
-    """[3/5] 真实大模型 (Qwen3.5-0.8B & Qwen3-0.6B) 实测各向异性页排序启发式的真实 Attention Mass Recall。"""
-    print("\n================ [3/5] 真实大模型 Attention Mass Recall 与 Top-k 页命中消融 ================", flush=True)
+    """
+    [3/5] 多文档 + 完整 Tail 全局 Softmax 实测各向异性页排序启发式的 Attention Mass Recall。
+
+    覆盖 4 篇异质文档 × 16 步 Decode（64 steps / global layer），每次均将全部压缩历史页与
+    动态增长的完整全精 Tail 拼接计算全局 Softmax 分母，同时统计：
+      - hist_mass_*: 历史页内相对注意力质量召回率；
+      - full_mass_*: 全序列总注意力质量保留率（选中历史页 + 100% 常驻全精 Tail）；
+      - oracle_15:   与历史页 Oracle Top-15% 的集合重合度；
+      - tail_mass_share: 全精 Tail 自身吸收的注意力质量占比。
+    """
+    print("\n================ [3/5] 多文档+完整Tail 全局Softmax Attention Mass Recall 消融 ================", flush=True)
     device = torch.device("cuda:0")
     out: dict[str, Any] = {}
+    recall_steps = 16
 
     strats = [
         ("center_beta0", "center", 0.0),
@@ -513,59 +555,7 @@ def run_routing_recall_ablation() -> dict[str, Any]:
             m_src, dtype=torch.bfloat16
         ).to(device).eval()
 
-        docs = _build_docs(tokenizer, device)
-        d0 = docs[0]
-        full_ids = torch.cat([d0["prefix_ids"], d0["cont_ids"][:, :16]], dim=1)
-        prompt_ids = full_ids[:, :PREFIX_LEN]
-        step_ids = full_ids[:, PREFIX_LEN:]
-
-        pkv = DynamicCache(config=model.config)
-        with torch.no_grad():
-            model(input_ids=prompt_ids, cache=pkv, use_cache=True)
-
-        # 用前向 hook 提取接下来 8 步 Decode 中每全注意力层的真实 Query 状态 (RoPE 后输入 SDPA 的 Q)
-        captured_qs: dict[int, list[torch.Tensor]] = {}
-        orig_forwards: list[tuple[Any, Any]] = []
-
-        from transformers.models.qwen3.modeling_qwen3 import apply_rotary_pos_emb as q3_rope
-        from transformers.models.qwen3_5.modeling_qwen3_5 import apply_rotary_pos_emb as q35_rope
-
-        def _make_q_hook(mod_ref: torch.nn.Module):
-            l_idx = int(mod_ref.layer_idx)
-            captured_qs[l_idx] = []
-            orig_fwd = mod_ref.forward
-
-            def _wrapped(hidden_states, position_embeddings, attention_mask, cache=None, **kwargs):
-                input_shape = hidden_states.shape[:-1]
-                hidden_shape = (*input_shape, -1, mod_ref.head_dim)
-                if isinstance(mod_ref, Qwen3_5Attention):
-                    q_proj, _ = torch.chunk(mod_ref.q_proj(hidden_states).view(*input_shape, -1, mod_ref.head_dim * 2), 2, dim=-1)
-                    qs = mod_ref.q_norm(q_proj.view(hidden_shape)).transpose(1, 2)
-                    cos, sin = position_embeddings
-                    qs, _ = q35_rope(qs, qs, cos, sin)
-                else:
-                    qs = mod_ref.q_norm(mod_ref.q_proj(hidden_states).view(hidden_shape)).transpose(1, 2)
-                    cos, sin = position_embeddings
-                    qs, _ = q3_rope(qs, qs, cos, sin)
-                if qs.shape[2] == 1:
-                    captured_qs[l_idx].append(qs.detach().float())
-                return orig_fwd(hidden_states, position_embeddings, attention_mask, cache=cache, **kwargs)
-
-            orig_forwards.append((mod_ref, orig_fwd))
-            return _wrapped
-
-        for mod in model.modules():
-            if isinstance(mod, (Qwen3Attention, Qwen3_5Attention)):
-                mod.forward = _make_q_hook(mod)
-
-        with torch.no_grad():
-            for t in range(8):
-                model(input_ids=step_ids[:, t : t + 1], cache=pkv, use_cache=True)
-
-        for mod_ref, orig_fwd in orig_forwards:
-            mod_ref.forward = orig_fwd
-
-        # 对前 63 整页 (hist_len = 2016) 核算真实 BF16 注意力质量分布及各排序策略召回率
+        docs = _build_recall_docs(tokenizer, device)
         hist_len = (PREFIX_LEN - RECENT_TOKENS) // PAGE_SIZE * PAGE_SIZE
         n_pages = hist_len // PAGE_SIZE
         n_hot = int(math.ceil(n_pages * 0.15))
@@ -573,88 +563,169 @@ def run_routing_recall_ablation() -> dict[str, Any]:
         n_keep = min(n_pages, n_hot + n_warm_only)
 
         accum: dict[str, dict[str, list[float]]] = {
-            s[0]: {"mass_15": [], "mass_50": [], "oracle_15": [], "mass_15_pin0": [], "mass_50_pin0": []}
+            s[0]: {
+                "hist_mass_15": [],
+                "hist_mass_50": [],
+                "full_mass_15": [],
+                "full_mass_50": [],
+                "oracle_15": [],
+                "hist_mass_15_pin0": [],
+                "hist_mass_50_pin0": [],
+                "full_mass_15_pin0": [],
+                "full_mass_50_pin0": [],
+                "tail_mass_share": [],
+            }
             for s in strats
         }
 
-        for l_idx, qs_list in captured_qs.items():
-            lyr = pkv.layers[l_idx]
-            k_all = lyr.keys[:, :, :hist_len, :].float()  # (1, H_kv, hist_len, d)
-            h_kv = k_all.shape[1]
-            d = k_all.shape[-1]
-            q_stack = torch.cat(qs_list, dim=2)  # (1, H_q, 8, d)
-            h_q = q_stack.shape[1]
-            grp = h_q // h_kv
-            scaling = 1.0 / math.sqrt(d)
+        from transformers.models.qwen3.modeling_qwen3 import apply_rotary_pos_emb as q3_rope
+        from transformers.models.qwen3_5.modeling_qwen3_5 import apply_rotary_pos_emb as q35_rope
 
-            # 按页打包算页级 min/scale（同核严格一致转为 fp16 再转 float 评价）
-            k_paged = k_all.view(1, h_kv, n_pages, PAGE_SIZE, d)
-            km = k_paged.min(dim=-2).values.to(torch.float16).float()
-            kmax = k_paged.max(dim=-2).values
-            ks = (torch.clamp(kmax - k_paged.min(dim=-2).values, min=1e-7) / 15.0).to(torch.float16).float()
-            k_mid = km + 7.5 * ks
-            k_rad = 7.5 * ks
+        for d_item in docs:
+            pkv = DynamicCache(config=model.config)
+            with torch.no_grad():
+                model(input_ids=d_item["prefix_ids"], cache=pkv, use_cache=True)
 
-            q_g = q_stack.view(1, h_kv, grp, 8, d) * scaling
-            # 精确 BF16/FP32 在历史页上的组注意力质量与 Oracle Top-15% 页
-            logits = torch.einsum("bhgtd,bhpsd->bhgtps", q_g, k_paged)  # (1, H_kv, G, T, P, S)
-            probs = torch.softmax(logits.view(1, h_kv, grp, 8, n_pages * PAGE_SIZE), dim=-1).view(1, h_kv, grp, 8, n_pages, PAGE_SIZE)
-            # 组内任意头对页 p 的贡献取 max_g(page_prob) 以客观对齐 GQA 共享选页真实覆盖需求；也兼计组平均 mass
-            page_mass_grp = probs.sum(dim=-1).mean(dim=2)  # (1, H_kv, 8, P), sum_p == 1.0
-            oracle_idx = torch.topk(page_mass_grp, k=n_hot, dim=-1).indices
+            captured_qs: dict[int, list[torch.Tensor]] = {}
+            orig_forwards: list[tuple[Any, Any]] = []
 
-            mu = torch.einsum("bhgtd,bhpd->bhgtp", q_g, k_mid)
-            var = torch.einsum("bhgtd,bhpd->bhgtp", q_g * q_g, k_rad * k_rad)
-            l1_r = torch.einsum("bhgtd,bhpd->bhgtp", torch.abs(q_g), k_rad)
+            def _make_q_hook(mod_ref: torch.nn.Module):
+                l_idx = int(mod_ref.layer_idx)
+                captured_qs[l_idx] = []
+                orig_fwd = mod_ref.forward
 
-            for s_name, s_type, beta_v in strats:
-                if s_type == "center":
-                    u = mu
-                elif s_type == "anisotropic":
-                    u = mu + beta_v * torch.sqrt(torch.clamp(var, min=0.0))
-                else:
-                    u = mu + l1_r
-                u_rel = u - u.max(dim=-1, keepdim=True).values
-                gs = u_rel.max(dim=2).values + 1e-5 * torch.exp(u_rel).sum(dim=2)
+                def _wrapped(hidden_states, position_embeddings, attention_mask, cache=None, **kwargs):
+                    input_shape = hidden_states.shape[:-1]
+                    hidden_shape = (*input_shape, -1, mod_ref.head_dim)
+                    if isinstance(mod_ref, Qwen3_5Attention):
+                        q_proj, _ = torch.chunk(
+                            mod_ref.q_proj(hidden_states).view(*input_shape, -1, mod_ref.head_dim * 2), 2, dim=-1
+                        )
+                        qs = mod_ref.q_norm(q_proj.view(hidden_shape)).transpose(1, 2)
+                        cos, sin = position_embeddings
+                        qs, _ = q35_rope(qs, qs, cos, sin)
+                    else:
+                        qs = mod_ref.q_norm(mod_ref.q_proj(hidden_states).view(hidden_shape)).transpose(1, 2)
+                        cos, sin = position_embeddings
+                        qs, _ = q3_rope(qs, qs, cos, sin)
+                    if qs.shape[2] == 1:
+                        captured_qs[l_idx].append(qs.detach().float())
+                    return orig_fwd(hidden_states, position_embeddings, attention_mask, cache=cache, **kwargs)
 
-                # 1) 纯启发式排序（不 pin0）
-                idx_50 = torch.topk(gs, k=n_keep, dim=-1, sorted=True).indices
-                idx_15 = idx_50[..., :n_hot]
-                m15 = float(torch.gather(page_mass_grp, -1, idx_15).sum(dim=-1).mean().item())
-                m50 = float(torch.gather(page_mass_grp, -1, idx_50).sum(dim=-1).mean().item())
+                orig_forwards.append((mod_ref, orig_fwd))
+                return _wrapped
 
-                # 计算相对 Oracle Top-15% 页集合重合率
-                o_mask = torch.zeros_like(page_mass_grp, dtype=torch.bool).scatter_(-1, oracle_idx, True)
-                p_mask = torch.zeros_like(page_mass_grp, dtype=torch.bool).scatter_(-1, idx_15, True)
-                inter = float((o_mask & p_mask).float().sum(dim=-1).mean().item()) / float(n_hot)
+            for mod in model.modules():
+                if isinstance(mod, (Qwen3Attention, Qwen3_5Attention)):
+                    mod.forward = _make_q_hook(mod)
 
-                # 2) pin Page 0 (同算子默认策略)
-                gs_p0 = gs.clone()
-                gs_p0[..., 0] = 1e9
-                idx_p50 = torch.topk(gs_p0, k=n_keep, dim=-1, sorted=True).indices
-                idx_p15 = idx_p50[..., :n_hot]
-                mp15 = float(torch.gather(page_mass_grp, -1, idx_p15).sum(dim=-1).mean().item())
-                mp50 = float(torch.gather(page_mass_grp, -1, idx_p50).sum(dim=-1).mean().item())
+            with torch.no_grad():
+                for t in range(recall_steps):
+                    model(input_ids=d_item["step_ids"][:, t : t + 1], cache=pkv, use_cache=True)
 
-                accum[s_name]["mass_15"].append(m15)
-                accum[s_name]["mass_50"].append(m50)
-                accum[s_name]["oracle_15"].append(inter)
-                accum[s_name]["mass_15_pin0"].append(mp15)
-                accum[s_name]["mass_50_pin0"].append(mp50)
+            for mod_ref, orig_fwd in orig_forwards:
+                mod_ref.forward = orig_fwd
+
+            for l_idx, qs_list in captured_qs.items():
+                lyr = pkv.layers[l_idx]
+                k_all_seq = lyr.keys.float()  # (1, H_kv, PREFIX_LEN + recall_steps, d)
+                h_kv = k_all_seq.shape[1]
+                d = k_all_seq.shape[-1]
+                h_q = qs_list[0].shape[1]
+                grp = h_q // h_kv
+                scaling = 1.0 / math.sqrt(d)
+
+                k_paged = k_all_seq[:, :, :hist_len, :].view(1, h_kv, n_pages, PAGE_SIZE, d)
+                km = k_paged.min(dim=-2).values.to(torch.float16).float()
+                kmax = k_paged.max(dim=-2).values
+                ks = (torch.clamp(kmax - k_paged.min(dim=-2).values, min=1e-7) / 15.0).to(torch.float16).float()
+                k_mid = km + 7.5 * ks
+                k_rad = 7.5 * ks
+
+                for t in range(recall_steps):
+                    q_t = qs_list[t].view(1, h_kv, grp, 1, d) * scaling
+                    k_tail_t = k_all_seq[:, :, hist_len : PREFIX_LEN + t + 1, :]  # (1, H_kv, L_tail, d)
+
+                    logits_hist = torch.einsum("bhgtd,bhpsd->bhgtps", q_t, k_paged).reshape(1, h_kv, grp, 1, hist_len)
+                    logits_tail = torch.einsum("bhgtd,bhnd->bhgtn", q_t, k_tail_t)
+                    logits_cat = torch.cat([logits_hist, logits_tail], dim=-1)
+                    probs_cat = torch.softmax(logits_cat, dim=-1)
+
+                    probs_hist = probs_cat[..., :hist_len].view(1, h_kv, grp, 1, n_pages, PAGE_SIZE)
+                    probs_tail = probs_cat[..., hist_len:]
+
+                    page_mass_grp = probs_hist.sum(dim=-1).mean(dim=2)  # (1, H_kv, 1, P)
+                    hist_mass_tot = torch.clamp(page_mass_grp.sum(dim=-1), min=1e-12)  # (1, H_kv, 1)
+                    tail_mass_grp = probs_tail.sum(dim=-1).mean(dim=2)  # (1, H_kv, 1)
+                    oracle_idx = torch.topk(page_mass_grp, k=n_hot, dim=-1).indices
+
+                    mu = torch.einsum("bhgtd,bhpd->bhgtp", q_t, k_mid)
+                    var = torch.einsum("bhgtd,bhpd->bhgtp", q_t * q_t, k_rad * k_rad)
+                    l1_r = torch.einsum("bhgtd,bhpd->bhgtp", torch.abs(q_t), k_rad)
+
+                    for s_name, s_type, beta_v in strats:
+                        if s_type == "center":
+                            u = mu
+                        elif s_type == "anisotropic":
+                            u = mu + beta_v * torch.sqrt(torch.clamp(var, min=0.0))
+                        else:
+                            u = mu + l1_r
+                        u_rel = u - u.max(dim=-1, keepdim=True).values
+                        gs = u_rel.max(dim=2).values + 1e-5 * torch.exp(u_rel).sum(dim=2)
+
+                        idx_50 = torch.topk(gs, k=n_keep, dim=-1, sorted=True).indices
+                        idx_15 = idx_50[..., :n_hot]
+                        sel_15 = torch.gather(page_mass_grp, -1, idx_15).sum(dim=-1)
+                        sel_50 = torch.gather(page_mass_grp, -1, idx_50).sum(dim=-1)
+
+                        o_mask = torch.zeros_like(page_mass_grp, dtype=torch.bool).scatter_(-1, oracle_idx, True)
+                        p_mask = torch.zeros_like(page_mass_grp, dtype=torch.bool).scatter_(-1, idx_15, True)
+                        inter = float((o_mask & p_mask).float().sum(dim=-1).mean().item()) / float(n_hot)
+
+                        gs_p0 = gs.clone()
+                        gs_p0[..., 0] = 1e9
+                        idx_p50 = torch.topk(gs_p0, k=n_keep, dim=-1, sorted=True).indices
+                        idx_p15 = idx_p50[..., :n_hot]
+                        sel_p15 = torch.gather(page_mass_grp, -1, idx_p15).sum(dim=-1)
+                        sel_p50 = torch.gather(page_mass_grp, -1, idx_p50).sum(dim=-1)
+
+                        accum[s_name]["hist_mass_15"].append(float((sel_15 / hist_mass_tot).mean().item()))
+                        accum[s_name]["hist_mass_50"].append(float((sel_50 / hist_mass_tot).mean().item()))
+                        accum[s_name]["full_mass_15"].append(float((sel_15 + tail_mass_grp).mean().item()))
+                        accum[s_name]["full_mass_50"].append(float((sel_50 + tail_mass_grp).mean().item()))
+                        accum[s_name]["oracle_15"].append(inter)
+                        accum[s_name]["hist_mass_15_pin0"].append(float((sel_p15 / hist_mass_tot).mean().item()))
+                        accum[s_name]["hist_mass_50_pin0"].append(float((sel_p50 / hist_mass_tot).mean().item()))
+                        accum[s_name]["full_mass_15_pin0"].append(float((sel_p15 + tail_mass_grp).mean().item()))
+                        accum[s_name]["full_mass_50_pin0"].append(float((sel_p50 + tail_mass_grp).mean().item()))
+                        accum[s_name]["tail_mass_share"].append(float(tail_mass_grp.mean().item()))
+
+            del pkv, captured_qs
+            gc.collect()
+            torch.cuda.empty_cache()
 
         out[model_name] = {}
-        print(f"\n--- {model_name} 真实 Attention Mass Recall（P={n_pages}, Hot=15%, Hot+Warm=50%）---", flush=True)
+        sample_tail = float(np.mean(accum[strats[0][0]]["tail_mass_share"]))
+        print(
+            f"\n--- {model_name} 多文档+完整Tail Recall（4 docs x {recall_steps} steps, P={n_pages}, Tail Mass={sample_tail*100:.1f}%）---",
+            flush=True,
+        )
         for s_name, _, _ in strats:
             row = {k: float(np.mean(v)) for k, v in accum[s_name].items()}
+            # 向下兼容旧字段名
+            row["mass_15"] = row["hist_mass_15"]
+            row["mass_50"] = row["hist_mass_50"]
+            row["mass_15_pin0"] = row["hist_mass_15_pin0"]
+            row["mass_50_pin0"] = row["hist_mass_50_pin0"]
             out[model_name][s_name] = row
             print(
-                f"  {s_name:15s} | Pure Recall@15%={row['mass_15']*100:5.1f}% Recall@50%={row['mass_50']*100:5.1f}% "
-                f"| Pin0 Recall@15%={row['mass_15_pin0']*100:5.1f}% Recall@50%={row['mass_50_pin0']*100:5.1f}% "
-                f"| OracleTop15 Overlap={row['oracle_15']*100:5.1f}%",
+                f"  {s_name:15s} | Hist@15={row['hist_mass_15']*100:5.1f}% (Pin0 {row['hist_mass_15_pin0']*100:5.1f}%) "
+                f"| FullSeq@15={row['full_mass_15']*100:5.1f}% FullSeq@50={row['full_mass_50']*100:5.1f}% "
+                f"| OracleTop15={row['oracle_15']*100:5.1f}%",
                 flush=True,
             )
 
-        del model, pkv, captured_qs
+        del model, docs
         gc.collect()
         torch.cuda.empty_cache()
 
@@ -688,14 +759,21 @@ def _eval_model_vram_and_throughput(
     model_name: str,
     device: torch.device,
 ) -> dict[str, Any]:
-    """在真实模型上以完整 `model.generate()` 实测原生 DynamicCache vs BitPlaneDynamicCache 真显存与解码吞吐。"""
-    print(f"\n--- 真端到端显存压缩与 generate() 吞吐压测: {model_name} ---", flush=True)
-    # 先跑 1 次极小热身消除 CUDA / Triton JIT allocator 首帧扰动
+    """
+    在真实模型上执行三方端到端消融 (`Native BF16` vs `Paged INT4` vs `BitPlane DualStream 15+35`)：
+      - 测量原生 CUDA Allocator 稳态 KV 显存、峰值总显存及 End-to-End Greedy Decode 吞吐；
+      - 在 `B4_L4096_G128` 额外补充完整 `model.generate()` 端到端对照数据。
+    """
+    from contextlib import nullcontext
+
+    print(f"\n--- 三方端到端 CUDA 显存与 Greedy Decode 吞吐消融: {model_name} ---", flush=True)
     warm_ids = torch.randint(10, 500, (1, 128), device=device, dtype=torch.long)
-    warm_bp = BitPlaneDynamicCache(config=model.config, page_size=PAGE_SIZE, recent_tokens=RECENT_TOKENS)
-    with warm_bp.attach(model), torch.no_grad():
-        model.generate(input_ids=warm_ids, cache=warm_bp, max_new_tokens=8, do_sample=False)
-    del warm_ids, warm_bp
+    for m_warm in ("triton_int4", "triton_dualstream"):
+        warm_bp = BitPlaneDynamicCache(config=model.config, page_size=PAGE_SIZE, recent_tokens=RECENT_TOKENS, mode=m_warm)
+        with warm_bp.attach(model), torch.no_grad():
+            model.generate(input_ids=warm_ids, cache=warm_bp, max_new_tokens=8, do_sample=False)
+        del warm_bp
+    del warm_ids
     gc.collect()
     torch.cuda.empty_cache()
     torch.cuda.reset_peak_memory_stats(device)
@@ -712,37 +790,45 @@ def _eval_model_vram_and_throughput(
         torch.manual_seed(9090 + bsz + l_pref)
         prompt = torch.randint(100, 2000, (bsz, l_pref), device=device, dtype=torch.long)
 
-        def _measure_single(use_bitplane: bool) -> dict[str, Any]:
-            gc.collect()
-            torch.cuda.empty_cache()
-            torch.cuda.reset_peak_memory_stats(device)
-            base_mb = torch.cuda.memory_allocated(device) / (1024.0 ** 2)
-
-            if use_bitplane:
-                cache_obj = BitPlaneDynamicCache(
+        def _make_cache_and_ctx(mode_key: str):
+            if mode_key == "native_bf16":
+                return DynamicCache(config=model.config), nullcontext(), False
+            if mode_key == "paged_int4":
+                c = BitPlaneDynamicCache(
                     config=model.config,
                     page_size=PAGE_SIZE,
                     recent_tokens=RECENT_TOKENS,
-                    mode="triton_dualstream",
-                    hot_ratio=0.15,
-                    warm_ratio=0.35,
-                    beta=1.5,
+                    mode="triton_int4",
                 )
-                ctx = cache_obj.attach(model)
-            else:
-                cache_obj = DynamicCache(config=model.config)
-                from contextlib import nullcontext
-                ctx = nullcontext()
+                return c, c.attach(model), True
+            c = BitPlaneDynamicCache(
+                config=model.config,
+                page_size=PAGE_SIZE,
+                recent_tokens=RECENT_TOKENS,
+                mode="triton_dualstream",
+                hot_ratio=0.15,
+                warm_ratio=0.35,
+                beta=1.5,
+            )
+            return c, c.attach(model), True
+
+        def _measure_greedy(mode_key: str) -> dict[str, Any]:
+            gc.collect()
+            torch.cuda.empty_cache()
+            torch.cuda.reset_peak_memory_stats(device)
+            if hasattr(model, "model") and hasattr(model.model, "rope_deltas"):
+                model.model.rope_deltas = None
+            base_mb = torch.cuda.memory_allocated(device) / (1024.0 ** 2)
+            cache_obj, ctx, is_bp = _make_cache_and_ctx(mode_key)
 
             with ctx, torch.no_grad():
                 t0 = time.perf_counter()
-                pref_out = model(input_ids=prompt, cache=cache_obj, use_cache=True)
+                pref_out = model(input_ids=prompt, cache=cache_obj, use_cache=True, logits_to_keep=1)
                 torch.cuda.synchronize()
                 t_prefill_ms = (time.perf_counter() - t0) * 1000.0
                 nxt = torch.argmax(pref_out.logits[:, -1, :], dim=-1, keepdim=True)
                 del pref_out
 
-                # 首步预热不计入 Decode 均值（若需全量 `generate` 也单独统计完整耗时）
                 torch.cuda.synchronize()
                 td0 = time.perf_counter()
                 for _ in range(gen_steps):
@@ -754,44 +840,99 @@ def _eval_model_vram_and_throughput(
             steady_kv_mb = (torch.cuda.memory_allocated(device) / (1024.0 ** 2)) - base_mb
             peak_total_mb = torch.cuda.max_memory_allocated(device) / (1024.0 ** 2)
             peak_kv_overhead_mb = peak_total_mb - base_mb
-            cache_meta = cache_obj.memory_stats() if use_bitplane else None
+            cache_meta = cache_obj.memory_stats() if is_bp else None
 
             del cache_obj, nxt
             gc.collect()
             torch.cuda.empty_cache()
+            dec_tps = float(bsz * gen_steps) / max(t_decode_total_s, 1e-9)
+            dec_ms_step = (t_decode_total_s * 1000.0) / float(gen_steps)
             return {
                 "base_model_mb": base_mb,
                 "steady_kv_vram_mb": steady_kv_mb,
                 "peak_total_vram_mb": peak_total_mb,
                 "peak_kv_delta_mb": peak_kv_overhead_mb,
                 "prefill_ms": t_prefill_ms,
+                "greedy_decode_total_s": t_decode_total_s,
+                "greedy_decode_ms_per_step": dec_ms_step,
+                "greedy_decode_tokens_per_sec": dec_tps,
                 "decode_total_s": t_decode_total_s,
-                "decode_ms_per_step": (t_decode_total_s * 1000.0) / float(gen_steps),
-                "decode_tokens_per_sec": float(bsz * gen_steps) / max(t_decode_total_s, 1e-9),
+                "decode_ms_per_step": dec_ms_step,
+                "decode_tokens_per_sec": dec_tps,
                 "cache_pool_stats": cache_meta,
             }
 
-        nat_m = _measure_single(use_bitplane=False)
-        bp_m = _measure_single(use_bitplane=True)
+        nat_m = _measure_greedy("native_bf16")
+        i4_m = _measure_greedy("paged_int4")
+        bp_m = _measure_greedy("bitplane_dualstream_15_35")
 
-        kv_vram_ratio = nat_m["steady_kv_vram_mb"] / max(bp_m["steady_kv_vram_mb"], 0.1)
-        tp_speedup = bp_m["decode_tokens_per_sec"] / max(nat_m["decode_tokens_per_sec"], 1e-6)
+        hf_gen_ctrl: dict[str, Any] | None = None
+        if s_key == "B4_L4096_G128":
+            hf_gen_ctrl = {}
+            for m_k in ("native_bf16", "paged_int4", "bitplane_dualstream_15_35"):
+                gc.collect()
+                torch.cuda.empty_cache()
+                cache_g, ctx_g, _ = _make_cache_and_ctx(m_k)
+                with ctx_g, torch.no_grad():
+                    if hasattr(model, "model") and hasattr(model.model, "rope_deltas"):
+                        model.model.rope_deltas = None
+                    torch.cuda.synchronize()
+                    tg0 = time.perf_counter()
+                    model.generate(
+                        input_ids=prompt,
+                        attention_mask=torch.ones_like(prompt),
+                        pad_token_id=0,
+                        cache=cache_g,
+                        use_cache=True,
+                        max_new_tokens=gen_steps,
+                        min_new_tokens=gen_steps,
+                        do_sample=False,
+                    )
+                    torch.cuda.synchronize()
+                    tg_wall = time.perf_counter() - tg0
+                hf_gen_ctrl[m_k] = {
+                    "hf_generate_wall_s": tg_wall,
+                    "hf_generate_total_tok_per_sec": float(bsz * gen_steps) / max(tg_wall, 1e-9),
+                }
+                del cache_g
+                gc.collect()
+                torch.cuda.empty_cache()
+
+        vram_i4_vs_bf16 = nat_m["steady_kv_vram_mb"] / max(i4_m["steady_kv_vram_mb"], 0.1)
+        vram_dual_vs_bf16 = nat_m["steady_kv_vram_mb"] / max(bp_m["steady_kv_vram_mb"], 0.1)
+        sp_i4_vs_bf16 = i4_m["greedy_decode_tokens_per_sec"] / max(nat_m["greedy_decode_tokens_per_sec"], 1e-6)
+        sp_dual_vs_bf16 = bp_m["greedy_decode_tokens_per_sec"] / max(nat_m["greedy_decode_tokens_per_sec"], 1e-6)
+        sp_dual_vs_i4 = bp_m["greedy_decode_tokens_per_sec"] / max(i4_m["greedy_decode_tokens_per_sec"], 1e-6)
+
         res["configs"][s_key] = {
             "batch_size": bsz,
             "prefill_len": l_pref,
             "gen_steps": gen_steps,
             "native_bf16_dynamic_cache": nat_m,
+            "paged_int4_dynamic_cache": i4_m,
             "bitplane_dynamic_cache_15_35": bp_m,
-            "real_cuda_kv_vram_compression_ratio": kv_vram_ratio,
-            "real_decode_throughput_speedup": tp_speedup,
+            "hf_generate_control": hf_gen_ctrl,
+            "vram_compression_int4_vs_bf16": vram_i4_vs_bf16,
+            "vram_compression_dual35_vs_bf16": vram_dual_vs_bf16,
+            "greedy_speedup_int4_vs_bf16": sp_i4_vs_bf16,
+            "greedy_speedup_dual35_vs_bf16": sp_dual_vs_bf16,
+            "greedy_speedup_dual35_vs_int4": sp_dual_vs_i4,
+            "real_cuda_kv_vram_compression_ratio": vram_dual_vs_bf16,
+            "real_decode_throughput_speedup": sp_dual_vs_bf16,
         }
-        print(
-            f"  {s_key:15s} | Native KV={nat_m['steady_kv_vram_mb']:6.1f} MB ({nat_m['decode_tokens_per_sec']:6.1f} tok/s) "
-            f"| BitPlane KV={bp_m['steady_kv_vram_mb']:6.1f} MB ({bp_m['decode_tokens_per_sec']:6.1f} tok/s) "
-            f"| 真显存压缩={kv_vram_ratio:.2f}x (全局页池理论={bp_m['cache_pool_stats']['compression_ratio']:.2f}x) "
-            f"| Decode吞吐比={tp_speedup:.2f}x",
-            flush=True,
+        msg = (
+            f"  {s_key:15s} | Native BF16={nat_m['steady_kv_vram_mb']:6.1f} MB ({nat_m['greedy_decode_tokens_per_sec']:5.1f} tok/s) "
+            f"| Paged-INT4={i4_m['steady_kv_vram_mb']:6.1f} MB ({i4_m['greedy_decode_tokens_per_sec']:5.1f} tok/s, {sp_i4_vs_bf16:.2f}x) "
+            f"| DualStream35={bp_m['steady_kv_vram_mb']:6.1f} MB ({bp_m['greedy_decode_tokens_per_sec']:5.1f} tok/s, {sp_dual_vs_bf16:.2f}x vs BF16, {sp_dual_vs_i4:.2f}x vs INT4)"
         )
+        print(msg, flush=True)
+        if hf_gen_ctrl is not None:
+            print(
+                f"    [model.generate 对照] Native={hf_gen_ctrl['native_bf16']['hf_generate_wall_s']:.2f}s | "
+                f"Paged-INT4={hf_gen_ctrl['paged_int4']['hf_generate_wall_s']:.2f}s | "
+                f"Dual35={hf_gen_ctrl['bitplane_dualstream_15_35']['hf_generate_wall_s']:.2f}s",
+                flush=True,
+            )
         del prompt
         gc.collect()
         torch.cuda.empty_cache()
@@ -1132,19 +1273,35 @@ def main() -> int:
         return 0
     t0 = time.perf_counter()
     props = torch.cuda.get_device_properties(0)
-    data: dict[str, Any] = {
-        "hardware": {
-            "gpu": props.name,
-            "total_vram_gb": props.total_memory / (1024.0 ** 3),
-            "sm_count": props.multi_processor_count,
-            "torch": torch.__version__,
-            "cuda_capability": f"sm_{props.major}{props.minor}",
-        },
-        "latency": run_latency_benchmarks(),
-        "ptxas": run_ptxas_microarch_audit(),
-        "routing_recall": run_routing_recall_ablation(),
-        "end_to_end": run_end_to_end_real_kernels(),
-    }
+    if "--only-recall-and-e2e" in sys.argv and OUT_JSON.exists():
+        prev = json.loads(OUT_JSON.read_text(encoding="utf-8"))
+        data: dict[str, Any] = {
+            "hardware": {
+                "gpu": props.name,
+                "total_vram_gb": props.total_memory / (1024.0 ** 3),
+                "sm_count": props.multi_processor_count,
+                "torch": torch.__version__,
+                "cuda_capability": f"sm_{props.major}{props.minor}",
+            },
+            "latency": prev["latency"],
+            "ptxas": prev["ptxas"],
+            "routing_recall": run_routing_recall_ablation(),
+            "end_to_end": run_end_to_end_real_kernels(),
+        }
+    else:
+        data = {
+            "hardware": {
+                "gpu": props.name,
+                "total_vram_gb": props.total_memory / (1024.0 ** 3),
+                "sm_count": props.multi_processor_count,
+                "torch": torch.__version__,
+                "cuda_capability": f"sm_{props.major}{props.minor}",
+            },
+            "latency": run_latency_benchmarks(),
+            "ptxas": run_ptxas_microarch_audit(),
+            "routing_recall": run_routing_recall_ablation(),
+            "end_to_end": run_end_to_end_real_kernels(),
+        }
     data["elapsed_sec"] = time.perf_counter() - t0
     OUT_JSON.parent.mkdir(parents=True, exist_ok=True)
     OUT_JSON.write_text(json.dumps(data, indent=2), encoding="utf-8")

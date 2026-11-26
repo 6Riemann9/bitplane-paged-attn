@@ -1,0 +1,908 @@
+{
+  "hardware": {
+    "gpu": "NVIDIA GeForce RTX 5070 Ti",
+    "total_vram_gb": 15.89398193359375,
+    "sm_count": 70,
+    "torch": "2.9.1+cu128",
+    "cuda_capability": "sm_120",
+    "model": "Qwen3-4B (36L, 32Q/8KV, d=128, BF16)"
+  },
+  "ruler": {
+    "S_NIAH": {
+      "8192": {
+        "native_bf16": {
+          "hits": 10,
+          "total": 10,
+          "acc": 1.0,
+          "logical_read_bits": 16.0
+        },
+        "paged_int4": {
+          "hits": 10,
+          "total": 10,
+          "acc": 1.0,
+          "logical_read_bits": 4.625
+        },
+        "quest_hard_15_0": {
+          "hits": 10,
+          "total": 10,
+          "acc": 1.0,
+          "logical_read_bits": 1.2073529411764705
+        },
+        "bitplane_dual_15_35": {
+          "hits": 10,
+          "total": 10,
+          "acc": 1.0,
+          "logical_read_bits": 2.1338235294117642
+        },
+        "readkv_prog_15_85": {
+          "hits": 10,
+          "total": 10,
+          "acc": 1.0,
+          "logical_read_bits": 3.4308823529411763
+        }
+      },
+      "16384": {
+        "native_bf16": {
+          "hits": 10,
+          "total": 10,
+          "acc": 1.0,
+          "logical_read_bits": 16.0
+        },
+        "paged_int4": {
+          "hits": 10,
+          "total": 10,
+          "acc": 1.0,
+          "logical_read_bits": 4.625
+        },
+        "quest_hard_15_0": {
+          "hits": 10,
+          "total": 10,
+          "acc": 1.0,
+          "logical_read_bits": 1.196917808219178
+        },
+        "bitplane_dual_15_35": {
+          "hits": 10,
+          "total": 10,
+          "acc": 1.0,
+          "logical_read_bits": 2.1164383561643834
+        },
+        "readkv_prog_15_85": {
+          "hits": 10,
+          "total": 10,
+          "acc": 1.0,
+          "logical_read_bits": 3.426369863013698
+        }
+      },
+      "24576": {
+        "native_bf16": {
+          "hits": 10,
+          "total": 10,
+          "acc": 1.0,
+          "logical_read_bits": 16.0
+        },
+        "paged_int4": {
+          "hits": 10,
+          "total": 10,
+          "acc": 1.0,
+          "logical_read_bits": 4.625
+        },
+        "quest_hard_15_0": {
+          "hits": 10,
+          "total": 10,
+          "acc": 1.0,
+          "logical_read_bits": 1.1994784876140812
+        },
+        "bitplane_dual_15_35": {
+          "hits": 10,
+          "total": 10,
+          "acc": 1.0,
+          "logical_read_bits": 2.1201108213820077
+        },
+        "readkv_prog_15_85": {
+          "hits": 10,
+          "total": 10,
+          "acc": 1.0,
+          "logical_read_bits": 3.4274771838331164
+        }
+      },
+      "32768": {
+        "native_bf16": {
+          "hits": null,
+          "total": 10,
+          "acc": null,
+          "status": "skipped_wddm_vram_wall",
+          "logical_read_bits": 16.0
+        },
+        "paged_int4": {
+          "hits": 10,
+          "total": 10,
+          "acc": 1.0,
+          "logical_read_bits": 4.625
+        },
+        "quest_hard_15_0": {
+          "hits": 10,
+          "total": 10,
+          "acc": 1.0,
+          "logical_read_bits": 1.1962365591397848
+        },
+        "bitplane_dual_15_35": {
+          "hits": 10,
+          "total": 10,
+          "acc": 1.0,
+          "logical_read_bits": 2.1174242424242427
+        },
+        "readkv_prog_15_85": {
+          "hits": 10,
+          "total": 10,
+          "acc": 1.0,
+          "logical_read_bits": 3.426075268817205
+        }
+      }
+    },
+    "MK_NIAH": {
+      "16384": {
+        "native_bf16": {
+          "key_hits": 24,
+          "total_keys": 24,
+          "key_acc": 1.0,
+          "exact_all4_acc": 1.0,
+          "logical_read_bits": 16.0
+        },
+        "paged_int4": {
+          "key_hits": 24,
+          "total_keys": 24,
+          "key_acc": 1.0,
+          "exact_all4_acc": 1.0,
+          "logical_read_bits": 4.625
+        },
+        "quest_hard_15_0": {
+          "key_hits": 24,
+          "total_keys": 24,
+          "key_acc": 1.0,
+          "exact_all4_acc": 1.0,
+          "logical_read_bits": 1.1964640856877853
+        },
+        "bitplane_dual_15_35": {
+          "key_hits": 24,
+          "total_keys": 24,
+          "key_acc": 1.0,
+          "exact_all4_acc": 1.0,
+          "logical_read_bits": 2.1170949718179224
+        },
+        "readkv_prog_15_85": {
+          "key_hits": 24,
+          "total_keys": 24,
+          "key_acc": 1.0,
+          "exact_all4_acc": 1.0,
+          "logical_read_bits": 3.426173658675799
+        }
+      },
+      "24576": {
+        "native_bf16": {
+          "key_hits": null,
+          "total_keys": 24,
+          "key_acc": null,
+          "exact_all4_acc": null,
+          "status": "skipped_wddm_vram_wall",
+          "logical_read_bits": 16.0
+        },
+        "paged_int4": {
+          "key_hits": 24,
+          "total_keys": 24,
+          "key_acc": 1.0,
+          "exact_all4_acc": 1.0,
+          "logical_read_bits": 4.625
+        },
+        "quest_hard_15_0": {
+          "key_hits": 24,
+          "total_keys": 24,
+          "key_acc": 1.0,
+          "exact_all4_acc": 1.0,
+          "logical_read_bits": 1.1991748945204987
+        },
+        "bitplane_dual_15_35": {
+          "key_hits": 24,
+          "total_keys": 24,
+          "key_acc": 1.0,
+          "exact_all4_acc": 1.0,
+          "logical_read_bits": 2.1194076482824493
+        },
+        "readkv_prog_15_85": {
+          "key_hits": 24,
+          "total_keys": 24,
+          "key_acc": 1.0,
+          "exact_all4_acc": 1.0,
+          "logical_read_bits": 3.4273459003331896
+        }
+      },
+      "32768": {
+        "native_bf16": {
+          "key_hits": null,
+          "total_keys": 24,
+          "key_acc": null,
+          "exact_all4_acc": null,
+          "status": "skipped_wddm_vram_wall",
+          "logical_read_bits": 16.0
+        },
+        "paged_int4": {
+          "key_hits": 23,
+          "total_keys": 24,
+          "key_acc": 0.9583333333333334,
+          "exact_all4_acc": 0.8333333333333334,
+          "logical_read_bits": 4.625
+        },
+        "quest_hard_15_0": {
+          "key_hits": 23,
+          "total_keys": 24,
+          "key_acc": 0.9583333333333334,
+          "exact_all4_acc": 0.8333333333333334,
+          "logical_read_bits": 1.1960099196348566
+        },
+        "bitplane_dual_15_35": {
+          "key_hits": 23,
+          "total_keys": 24,
+          "key_acc": 0.9583333333333334,
+          "exact_all4_acc": 0.8333333333333334,
+          "logical_read_bits": 2.1168977371369953
+        },
+        "readkv_prog_15_85": {
+          "key_hits": 23,
+          "total_keys": 24,
+          "key_acc": 0.9583333333333334,
+          "exact_all4_acc": 0.8333333333333334,
+          "logical_read_bits": 3.4259772625448037
+        }
+      }
+    },
+    "VT": {
+      "8192": {
+        "native_bf16": {
+          "hits": 6,
+          "total": 6,
+          "acc": 1.0,
+          "logical_read_bits": 16.0
+        },
+        "paged_int4": {
+          "hits": 6,
+          "total": 6,
+          "acc": 1.0,
+          "logical_read_bits": 4.625
+        },
+        "quest_hard_15_0": {
+          "hits": 6,
+          "total": 6,
+          "acc": 1.0,
+          "logical_read_bits": 1.20624052532945
+        },
+        "bitplane_dual_15_35": {
+          "hits": 6,
+          "total": 6,
+          "acc": 1.0,
+          "logical_read_bits": 2.131088333771008
+        },
+        "readkv_prog_15_85": {
+          "hits": 6,
+          "total": 6,
+          "acc": 1.0,
+          "logical_read_bits": 3.4303702731092436
+        }
+      },
+      "16384": {
+        "native_bf16": {
+          "hits": 6,
+          "total": 6,
+          "acc": 1.0,
+          "logical_read_bits": 16.0
+        },
+        "paged_int4": {
+          "hits": 6,
+          "total": 6,
+          "acc": 1.0,
+          "logical_read_bits": 4.625
+        },
+        "quest_hard_15_0": {
+          "hits": 5,
+          "total": 6,
+          "acc": 0.8333333333333334,
+          "logical_read_bits": 1.196125065600848
+        },
+        "bitplane_dual_15_35": {
+          "hits": 6,
+          "total": 6,
+          "acc": 1.0,
+          "logical_read_bits": 2.1171816225723705
+        },
+        "readkv_prog_15_85": {
+          "hits": 6,
+          "total": 6,
+          "acc": 1.0,
+          "logical_read_bits": 3.426057237027821
+        }
+      },
+      "24576": {
+        "native_bf16": {
+          "hits": null,
+          "total": 6,
+          "acc": null,
+          "status": "skipped_wddm_vram_wall",
+          "logical_read_bits": 16.0
+        },
+        "paged_int4": {
+          "hits": 4,
+          "total": 6,
+          "acc": 0.6666666666666666,
+          "logical_read_bits": 4.625
+        },
+        "quest_hard_15_0": {
+          "hits": 5,
+          "total": 6,
+          "acc": 0.8333333333333334,
+          "logical_read_bits": 1.1989946894585755
+        },
+        "bitplane_dual_15_35": {
+          "hits": 4,
+          "total": 6,
+          "acc": 0.6666666666666666,
+          "logical_read_bits": 2.11915151208962
+        },
+        "readkv_prog_15_85": {
+          "hits": 4,
+          "total": 6,
+          "acc": 0.6666666666666666,
+          "logical_read_bits": 3.427267973819925
+        }
+      },
+      "32768": {
+        "native_bf16": {
+          "hits": null,
+          "total": 6,
+          "acc": null,
+          "status": "skipped_wddm_vram_wall",
+          "logical_read_bits": 16.0
+        },
+        "paged_int4": {
+          "hits": 6,
+          "total": 6,
+          "acc": 1.0,
+          "logical_read_bits": 4.625
+        },
+        "quest_hard_15_0": {
+          "hits": 4,
+          "total": 6,
+          "acc": 0.6666666666666666,
+          "logical_read_bits": 1.195810688561432
+        },
+        "bitplane_dual_15_35": {
+          "hits": 6,
+          "total": 6,
+          "acc": 1.0,
+          "logical_read_bits": 2.116585163123331
+        },
+        "readkv_prog_15_85": {
+          "hits": 6,
+          "total": 6,
+          "acc": 1.0,
+          "logical_read_bits": 3.4259039873545496
+        }
+      }
+    }
+  },
+  "long_ppl": {
+    "8192": {
+      "bf16_ppl": 3.737881898880005,
+      "ref_mode": "native_bf16",
+      "methods": {
+        "paged_int4": {
+          "mean_ppl": 3.7667526602745056,
+          "delta_ppl": 0.028870761394500732,
+          "mean_kl": 0.006329016396193765,
+          "logical_read_bits_per_kv_elem": 4.625
+        },
+        "quest_hard_15_0": {
+          "mean_ppl": 4.016700387001038,
+          "delta_ppl": 0.2788184881210327,
+          "mean_kl": 0.08896749094128609,
+          "logical_read_bits_per_kv_elem": 1.2032297352326131
+        },
+        "bitplane_dual_15_35": {
+          "mean_ppl": 3.7538520097732544,
+          "delta_ppl": 0.01597011089324951,
+          "mean_kl": 0.02961762953782454,
+          "logical_read_bits_per_kv_elem": 2.1268434712695266
+        },
+        "readkv_prog_15_85": {
+          "mean_ppl": 3.692695915699005,
+          "delta_ppl": -0.045185983180999756,
+          "mean_kl": 0.02300493628717959,
+          "logical_read_bits_per_kv_elem": 3.429099344965454
+        }
+      }
+    },
+    "16384": {
+      "bf16_ppl": 1.1968873143196106,
+      "ref_mode": "native_bf16",
+      "methods": {
+        "paged_int4": {
+          "mean_ppl": 1.189988613128662,
+          "delta_ppl": -0.006898701190948486,
+          "mean_kl": 0.0008446417086815927,
+          "logical_read_bits_per_kv_elem": 4.625
+        },
+        "quest_hard_15_0": {
+          "mean_ppl": 1.2633908987045288,
+          "delta_ppl": 0.06650358438491821,
+          "mean_kl": 0.02755687991157174,
+          "logical_read_bits_per_kv_elem": 1.1971308693996277
+        },
+        "bitplane_dual_15_35": {
+          "mean_ppl": 1.2114225029945374,
+          "delta_ppl": 0.014535188674926758,
+          "mean_kl": 0.0036199059250066057,
+          "logical_read_bits_per_kv_elem": 2.117802230002942
+        },
+        "readkv_prog_15_85": {
+          "mean_ppl": 1.2035284042358398,
+          "delta_ppl": 0.006641089916229248,
+          "mean_kl": 0.0015057514538057148,
+          "logical_read_bits_per_kv_elem": 3.426461997578217
+        }
+      }
+    },
+    "24576": {
+      "bf16_ppl": null,
+      "ref_mode": "paged_int4_wddm_wall",
+      "methods": {
+        "paged_int4": {
+          "mean_ppl": 1.25313800573349,
+          "delta_ppl": 0.0,
+          "mean_kl": 0.0,
+          "logical_read_bits_per_kv_elem": 4.625
+        },
+        "quest_hard_15_0": {
+          "mean_ppl": 1.2428494691848755,
+          "delta_ppl": -0.010288536548614502,
+          "mean_kl": 0.0038823655268060975,
+          "logical_read_bits_per_kv_elem": 1.1981146851224993
+        },
+        "bitplane_dual_15_35": {
+          "mean_ppl": 1.244890570640564,
+          "delta_ppl": -0.008247435092926025,
+          "mean_kl": 0.0009585102943674428,
+          "logical_read_bits_per_kv_elem": 2.1186576772277763
+        },
+        "readkv_prog_15_85": {
+          "mean_ppl": 1.2470846772193909,
+          "delta_ppl": -0.006053328514099121,
+          "mean_kl": 0.0008221103207688429,
+          "logical_read_bits_per_kv_elem": 3.4268874314043236
+        }
+      }
+    },
+    "32768": {
+      "bf16_ppl": null,
+      "ref_mode": "paged_int4_wddm_wall",
+      "methods": {
+        "paged_int4": {
+          "mean_ppl": 2.3585362434387207,
+          "delta_ppl": 0.0,
+          "mean_kl": 0.0,
+          "logical_read_bits_per_kv_elem": 4.625
+        },
+        "quest_hard_15_0": {
+          "mean_ppl": 2.3887927532196045,
+          "delta_ppl": 0.03025650978088379,
+          "mean_kl": 0.01296567264944315,
+          "logical_read_bits_per_kv_elem": 1.195218007068092
+        },
+        "bitplane_dual_15_35": {
+          "mean_ppl": 2.375714898109436,
+          "delta_ppl": 0.017178654670715332,
+          "mean_kl": 0.005550487665459514,
+          "logical_read_bits_per_kv_elem": 2.115697668243928
+        },
+        "readkv_prog_15_85": {
+          "mean_ppl": 2.36272656917572,
+          "delta_ppl": 0.004190325736999512,
+          "mean_kl": 0.002975562121719122,
+          "logical_read_bits_per_kv_elem": 3.4256348138672834
+        }
+      }
+    }
+  },
+  "vram_and_throughput": {
+    "B1_L8192_G64": {
+      "batch_size": 1,
+      "prefill_len": 8192,
+      "gen_steps": 64,
+      "methods": {
+        "native_bf16": {
+          "oom": false,
+          "wddm_vram_wall": false,
+          "steady_kv_vram_mb": 1163.00048828125,
+          "peak_total_vram_mb": 9381.65869140625,
+          "prefill_ms": 2077.251700000488,
+          "greedy_decode_total_s": 4.644605699999374,
+          "greedy_decode_ms_per_step": 72.57196406249022,
+          "greedy_decode_tokens_per_sec": 13.77942588323668,
+          "cache_pool_stats": null
+        },
+        "paged_int4": {
+          "oom": false,
+          "wddm_vram_wall": false,
+          "steady_kv_vram_mb": 375.0390625,
+          "peak_total_vram_mb": 9197.2138671875,
+          "prefill_ms": 2393.77350000359,
+          "greedy_decode_total_s": 2.078181900000345,
+          "greedy_decode_ms_per_step": 32.471592187505394,
+          "greedy_decode_tokens_per_sec": 30.796149268737913,
+          "cache_pool_stats": {
+            "num_paged_layers": 36,
+            "unique_active_blocks": 9252,
+            "logical_total_blocks": 9252,
+            "total_active_bytes": 355258368,
+            "total_reserved_bytes": 381911040,
+            "tail_bytes": 4718592,
+            "logical_fp16_equiv_bytes": 1217396736,
+            "active_mb": 338.80078125,
+            "reserved_mb": 368.71875,
+            "fp16_equiv_mb": 1161.0,
+            "compression_ratio": 3.426792570301961,
+            "reserved_compression_ratio": 3.148741418764302
+          }
+        },
+        "bitplane_dual_15_35": {
+          "oom": false,
+          "wddm_vram_wall": false,
+          "steady_kv_vram_mb": 376.2578125,
+          "peak_total_vram_mb": 9197.2138671875,
+          "prefill_ms": 2410.094700000627,
+          "greedy_decode_total_s": 2.5632920999996713,
+          "greedy_decode_ms_per_step": 40.051439062494865,
+          "greedy_decode_tokens_per_sec": 24.96789187623533,
+          "cache_pool_stats": {
+            "num_paged_layers": 36,
+            "unique_active_blocks": 9252,
+            "logical_total_blocks": 9252,
+            "total_active_bytes": 355258368,
+            "total_reserved_bytes": 381911040,
+            "tail_bytes": 4718592,
+            "logical_fp16_equiv_bytes": 1217396736,
+            "active_mb": 338.80078125,
+            "reserved_mb": 368.71875,
+            "fp16_equiv_mb": 1161.0,
+            "compression_ratio": 3.426792570301961,
+            "reserved_compression_ratio": 3.148741418764302
+          }
+        }
+      },
+      "vram_compression_int4_vs_bf16": 3.1010116133736068,
+      "greedy_speedup_int4_vs_bf16": 2.2349370379939324,
+      "vram_compression_dual35_vs_bf16": 3.090967016880879,
+      "greedy_speedup_dual35_vs_bf16": 1.8119689519582922,
+      "greedy_speedup_dual35_vs_int4": 0.8107472027868425
+    },
+    "B1_L16384_G64": {
+      "batch_size": 1,
+      "prefill_len": 16384,
+      "gen_steps": 64,
+      "methods": {
+        "native_bf16": {
+          "oom": false,
+          "wddm_vram_wall": false,
+          "steady_kv_vram_mb": 2315.0,
+          "peak_total_vram_mb": 10954.2060546875,
+          "prefill_ms": 5274.540200000047,
+          "greedy_decode_total_s": 7.8468110999965575,
+          "greedy_decode_ms_per_step": 122.60642343744621,
+          "greedy_decode_tokens_per_sec": 8.156179521134144,
+          "cache_pool_stats": null
+        },
+        "paged_int4": {
+          "oom": false,
+          "wddm_vram_wall": false,
+          "steady_kv_vram_mb": 754.04296875,
+          "peak_total_vram_mb": 9366.03564453125,
+          "prefill_ms": 6289.236799999344,
+          "greedy_decode_total_s": 2.154105300000083,
+          "greedy_decode_ms_per_step": 33.657895312501296,
+          "greedy_decode_tokens_per_sec": 29.71071098520464,
+          "cache_pool_stats": {
+            "num_paged_layers": 36,
+            "unique_active_blocks": 18468,
+            "logical_total_blocks": 18468,
+            "total_active_bytes": 704434176,
+            "total_reserved_bytes": 763822080,
+            "tail_bytes": 4718592,
+            "logical_fp16_equiv_bytes": 2425356288,
+            "active_mb": 671.80078125,
+            "reserved_mb": 732.9375,
+            "fp16_equiv_mb": 2313.0,
+            "compression_ratio": 3.4429849808990527,
+            "reserved_compression_ratio": 3.155794320798158
+          }
+        },
+        "bitplane_dual_15_35": {
+          "oom": false,
+          "wddm_vram_wall": false,
+          "steady_kv_vram_mb": 754.04296875,
+          "peak_total_vram_mb": 9366.03564453125,
+          "prefill_ms": 6276.280599999154,
+          "greedy_decode_total_s": 3.0254719000004116,
+          "greedy_decode_ms_per_step": 47.27299843750643,
+          "greedy_decode_tokens_per_sec": 21.15372481231483,
+          "cache_pool_stats": {
+            "num_paged_layers": 36,
+            "unique_active_blocks": 18468,
+            "logical_total_blocks": 18468,
+            "total_active_bytes": 704434176,
+            "total_reserved_bytes": 763822080,
+            "tail_bytes": 4718592,
+            "logical_fp16_equiv_bytes": 2425356288,
+            "active_mb": 671.80078125,
+            "reserved_mb": 732.9375,
+            "fp16_equiv_mb": 2313.0,
+            "compression_ratio": 3.4429849808990527,
+            "reserved_compression_ratio": 3.155794320798158
+          }
+        }
+      },
+      "vram_compression_int4_vs_bf16": 3.070116818193592,
+      "greedy_speedup_int4_vs_bf16": 3.6427240116795843,
+      "vram_compression_dual35_vs_bf16": 3.070116818193592,
+      "greedy_speedup_dual35_vs_bf16": 2.5935825416178844,
+      "greedy_speedup_dual35_vs_int4": 0.7119898552023537
+    },
+    "B1_L24576_G64": {
+      "batch_size": 1,
+      "prefill_len": 24576,
+      "gen_steps": 64,
+      "methods": {
+        "native_bf16": {
+          "oom": false,
+          "wddm_vram_wall": true
+        },
+        "paged_int4": {
+          "oom": false,
+          "wddm_vram_wall": false,
+          "steady_kv_vram_mb": 1477.765625,
+          "peak_total_vram_mb": 10501.18603515625,
+          "prefill_ms": 11999.275100002706,
+          "greedy_decode_total_s": 2.0551979999981995,
+          "greedy_decode_ms_per_step": 32.11246874997187,
+          "greedy_decode_tokens_per_sec": 31.140551907921314,
+          "cache_pool_stats": {
+            "num_paged_layers": 36,
+            "unique_active_blocks": 27684,
+            "logical_total_blocks": 27684,
+            "total_active_bytes": 1053609984,
+            "total_reserved_bytes": 1527644160,
+            "tail_bytes": 4718592,
+            "logical_fp16_equiv_bytes": 3633315840,
+            "active_mb": 1004.80078125,
+            "reserved_mb": 1461.375,
+            "fp16_equiv_mb": 3465.0,
+            "compression_ratio": 3.4484447710017143,
+            "reserved_compression_ratio": 2.3710546574287914
+          }
+        },
+        "bitplane_dual_15_35": {
+          "oom": false,
+          "wddm_vram_wall": false,
+          "steady_kv_vram_mb": 1477.765625,
+          "peak_total_vram_mb": 10501.18603515625,
+          "prefill_ms": 12110.509599999205,
+          "greedy_decode_total_s": 2.6303150999992795,
+          "greedy_decode_ms_per_step": 41.09867343748874,
+          "greedy_decode_tokens_per_sec": 24.331685583988598,
+          "cache_pool_stats": {
+            "num_paged_layers": 36,
+            "unique_active_blocks": 27684,
+            "logical_total_blocks": 27684,
+            "total_active_bytes": 1053609984,
+            "total_reserved_bytes": 1527644160,
+            "tail_bytes": 4718592,
+            "logical_fp16_equiv_bytes": 3633315840,
+            "active_mb": 1004.80078125,
+            "reserved_mb": 1461.375,
+            "fp16_equiv_mb": 3465.0,
+            "compression_ratio": 3.4484447710017143,
+            "reserved_compression_ratio": 2.3710546574287914
+          }
+        }
+      },
+      "greedy_speedup_dual35_vs_int4": 0.7813504929499748
+    },
+    "B2_L8192_G64": {
+      "batch_size": 2,
+      "prefill_len": 8192,
+      "gen_steps": 64,
+      "methods": {
+        "native_bf16": {
+          "oom": false,
+          "wddm_vram_wall": false,
+          "steady_kv_vram_mb": 2322.0,
+          "peak_total_vram_mb": 10961.783203125,
+          "prefill_ms": 3634.4738000007055,
+          "greedy_decode_total_s": 7.740662299998803,
+          "greedy_decode_ms_per_step": 120.9478484374813,
+          "greedy_decode_tokens_per_sec": 16.536052735438385,
+          "cache_pool_stats": null
+        },
+        "paged_int4": {
+          "oom": false,
+          "wddm_vram_wall": false,
+          "steady_kv_vram_mb": 754.48046875,
+          "peak_total_vram_mb": 9107.26806640625,
+          "prefill_ms": 4584.2771000025095,
+          "greedy_decode_total_s": 3.1182473999979265,
+          "greedy_decode_ms_per_step": 48.7226156249676,
+          "greedy_decode_tokens_per_sec": 41.048699343126245,
+          "cache_pool_stats": {
+            "num_paged_layers": 36,
+            "unique_active_blocks": 18504,
+            "logical_total_blocks": 18504,
+            "total_active_bytes": 710516736,
+            "total_reserved_bytes": 763822080,
+            "tail_bytes": 9437184,
+            "logical_fp16_equiv_bytes": 2434793472,
+            "active_mb": 677.6015625,
+            "reserved_mb": 737.4375,
+            "fp16_equiv_mb": 2322.0,
+            "compression_ratio": 3.426792570301961,
+            "reserved_compression_ratio": 3.148741418764302
+          }
+        },
+        "bitplane_dual_15_35": {
+          "oom": false,
+          "wddm_vram_wall": false,
+          "steady_kv_vram_mb": 756.41796875,
+          "peak_total_vram_mb": 9108.89306640625,
+          "prefill_ms": 4619.99300000025,
+          "greedy_decode_total_s": 2.4240608000000066,
+          "greedy_decode_ms_per_step": 37.8759500000001,
+          "greedy_decode_tokens_per_sec": 52.8039560723888,
+          "cache_pool_stats": {
+            "num_paged_layers": 36,
+            "unique_active_blocks": 18504,
+            "logical_total_blocks": 18504,
+            "total_active_bytes": 710516736,
+            "total_reserved_bytes": 763822080,
+            "tail_bytes": 9437184,
+            "logical_fp16_equiv_bytes": 2434793472,
+            "active_mb": 677.6015625,
+            "reserved_mb": 737.4375,
+            "fp16_equiv_mb": 2322.0,
+            "compression_ratio": 3.426792570301961,
+            "reserved_compression_ratio": 3.148741418764302
+          }
+        }
+      },
+      "vram_compression_int4_vs_bf16": 3.0776144594531627,
+      "greedy_speedup_int4_vs_bf16": 2.482375933354086,
+      "vram_compression_dual35_vs_bf16": 3.069731412960964,
+      "greedy_speedup_dual35_vs_bf16": 3.1932624379713506,
+      "greedy_speedup_dual35_vs_int4": 1.2863734275963365
+    },
+    "B1_L32768_G64": {
+      "batch_size": 1,
+      "prefill_len": 32768,
+      "gen_steps": 64,
+      "methods": {
+        "native_bf16": {
+          "oom": false,
+          "wddm_vram_wall": true
+        },
+        "paged_int4": {
+          "oom": false,
+          "wddm_vram_wall": false,
+          "steady_kv_vram_mb": 1477.80078125,
+          "peak_total_vram_mb": 10910.77392578125,
+          "prefill_ms": 19408.263699999225,
+          "greedy_decode_total_s": 1.934725700000854,
+          "greedy_decode_ms_per_step": 30.230089062513343,
+          "greedy_decode_tokens_per_sec": 33.07962467236143,
+          "cache_pool_stats": {
+            "num_paged_layers": 36,
+            "unique_active_blocks": 36900,
+            "logical_total_blocks": 36900,
+            "total_active_bytes": 1402785792,
+            "total_reserved_bytes": 1527644160,
+            "tail_bytes": 4718592,
+            "logical_fp16_equiv_bytes": 4841275392,
+            "active_mb": 1337.80078125,
+            "reserved_mb": 1461.375,
+            "fp16_equiv_mb": 4617.0,
+            "compression_ratio": 3.4511865030352404,
+            "reserved_compression_ratio": 3.159353348729792
+          }
+        },
+        "bitplane_dual_15_35": {
+          "oom": false,
+          "wddm_vram_wall": false,
+          "steady_kv_vram_mb": 1477.80078125,
+          "peak_total_vram_mb": 10910.77392578125,
+          "prefill_ms": 19416.35369999858,
+          "greedy_decode_total_s": 2.176585700002761,
+          "greedy_decode_ms_per_step": 34.00915156254314,
+          "greedy_decode_tokens_per_sec": 29.403850259568838,
+          "cache_pool_stats": {
+            "num_paged_layers": 36,
+            "unique_active_blocks": 36900,
+            "logical_total_blocks": 36900,
+            "total_active_bytes": 1402785792,
+            "total_reserved_bytes": 1527644160,
+            "tail_bytes": 4718592,
+            "logical_fp16_equiv_bytes": 4841275392,
+            "active_mb": 1337.80078125,
+            "reserved_mb": 1461.375,
+            "fp16_equiv_mb": 4617.0,
+            "compression_ratio": 3.4511865030352404,
+            "reserved_compression_ratio": 3.159353348729792
+          }
+        }
+      },
+      "greedy_speedup_dual35_vs_int4": 0.8888810121275722
+    },
+    "B2_L16384_G64": {
+      "batch_size": 2,
+      "prefill_len": 16384,
+      "gen_steps": 64,
+      "methods": {
+        "native_bf16": {
+          "oom": false,
+          "wddm_vram_wall": true
+        },
+        "paged_int4": {
+          "oom": false,
+          "wddm_vram_wall": false,
+          "steady_kv_vram_mb": 1488.76953125,
+          "peak_total_vram_mb": 10405.89501953125,
+          "prefill_ms": 13418.627999999444,
+          "greedy_decode_total_s": 2.080277400000341,
+          "greedy_decode_ms_per_step": 32.50433437500533,
+          "greedy_decode_tokens_per_sec": 61.53025553225691,
+          "cache_pool_stats": {
+            "num_paged_layers": 36,
+            "unique_active_blocks": 36936,
+            "logical_total_blocks": 36936,
+            "total_active_bytes": 1408868352,
+            "total_reserved_bytes": 1527644160,
+            "tail_bytes": 9437184,
+            "logical_fp16_equiv_bytes": 4850712576,
+            "active_mb": 1343.6015625,
+            "reserved_mb": 1465.875,
+            "fp16_equiv_mb": 4626.0,
+            "compression_ratio": 3.4429849808990527,
+            "reserved_compression_ratio": 3.155794320798158
+          }
+        },
+        "bitplane_dual_15_35": {
+          "oom": false,
+          "wddm_vram_wall": false,
+          "steady_kv_vram_mb": 1488.76953125,
+          "peak_total_vram_mb": 10405.89501953125,
+          "prefill_ms": 13422.678499999165,
+          "greedy_decode_total_s": 2.395524999999907,
+          "greedy_decode_ms_per_step": 37.430078124998545,
+          "greedy_decode_tokens_per_sec": 53.432963546615035,
+          "cache_pool_stats": {
+            "num_paged_layers": 36,
+            "unique_active_blocks": 36936,
+            "logical_total_blocks": 36936,
+            "total_active_bytes": 1408868352,
+            "total_reserved_bytes": 1527644160,
+            "tail_bytes": 9437184,
+            "logical_fp16_equiv_bytes": 4850712576,
+            "active_mb": 1343.6015625,
+            "reserved_mb": 1465.875,
+            "fp16_equiv_mb": 4626.0,
+            "compression_ratio": 3.4429849808990527,
+            "reserved_compression_ratio": 3.155794320798158
+          }
+        }
+      },
+      "greedy_speedup_dual35_vs_int4": 0.8684014568833228
+    }
+  },
+  "elapsed_sec": 190.41401459999906
+}

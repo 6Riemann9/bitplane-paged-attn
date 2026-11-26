@@ -17,7 +17,9 @@ from __future__ import annotations
 from contextlib import contextmanager
 from contextvars import ContextVar
 import math
+import threading
 from typing import Any, Iterator
+from weakref import WeakKeyDictionary
 
 import torch
 from transformers.cache_utils import (
@@ -27,9 +29,11 @@ from transformers.cache_utils import (
     get_layer_types_and_kwargs,
 )
 from transformers.integrations.sdpa_attention import sdpa_attention_forward
+from transformers.masking_utils import ALL_MASK_ATTENTION_FUNCTIONS
 from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
 
 from .packed_cache import PagedBitPlaneKVPool, PagedKVBatch
+from .quant_bitplane import QuantizedBitPlanePages, paged_bitplane_attention_decode
 from .triton_kernels import (
     triton_paged_bitplane_dualstream_decode,
     triton_paged_int4_decode,
@@ -39,6 +43,8 @@ _ACTIVE_BITPLANE_CACHE: ContextVar[BitPlaneDynamicCache | None] = ContextVar(
     "_ACTIVE_BITPLANE_CACHE",
     default=None,
 )
+_ATTACH_LOCK = threading.RLock()
+_MODEL_PATCH_STATE: WeakKeyDictionary[torch.nn.Module, dict[str, Any]] = WeakKeyDictionary()
 
 
 class BitPlaneCacheLayer(CacheLayerMixin):
@@ -211,6 +217,127 @@ class BitPlaneCacheLayer(CacheLayerMixin):
         return self.pool.memory_stats()
 
 
+def _has_masked_positions(attention_mask: torch.Tensor | None) -> bool:
+    """检测 Decode 传入的掩码中是否实际存在被屏蔽位置；无掩码时零同步直接走高速 Triton 热路径。"""
+    if attention_mask is None:
+        return False
+    if attention_mask.dtype == torch.bool:
+        return bool((~attention_mask).any().item())
+    return bool((attention_mask < -1e-3).any().item())
+
+
+def _pool_seq_to_quantized_pages(
+    pool: PagedBitPlaneKVPool,
+    seq_id: int,
+) -> tuple[QuantizedBitPlanePages, torch.Tensor, torch.Tensor, int]:
+    """将物理页池中的单条序列解包为供带掩码 Decode 回退路径使用的量化页与全序列 K/V。"""
+    u = pool.unpack_sequence(seq_id)
+    seq = pool.sequences[seq_id]
+    n_pages = seq.num_pages
+    hist_len = n_pages * pool.page_size
+    if n_pages == 0:
+        empty_m = torch.empty((1, pool.num_kv_heads, 0, pool.head_dim), dtype=torch.float32, device=pool.device)
+        pages = QuantizedBitPlanePages(
+            page_size=pool.page_size,
+            hist_len=0,
+            num_pages=0,
+            k_base=u["k_base"],
+            k_int4=u["k_int4"],
+            k_int2=u["k_base"],
+            v_base=u["v_base"],
+            v_int4=u["v_int4"],
+            v_int2=u["v_base"],
+            k_page_min=empty_m,
+            k_page_max=empty_m,
+        )
+    else:
+        idx_t = torch.tensor(seq.block_ids, dtype=torch.long, device=pool.device)
+        km = pool.k_min_pool.index_select(0, idx_t).float().permute(1, 0, 2).unsqueeze(0)
+        ks = pool.k_scale_pool.index_select(0, idx_t).float().permute(1, 0, 2).unsqueeze(0)
+        pages = QuantizedBitPlanePages(
+            page_size=pool.page_size,
+            hist_len=hist_len,
+            num_pages=n_pages,
+            k_base=u["k_base"],
+            k_int4=u["k_int4"],
+            k_int2=u["k_base"],
+            v_base=u["v_base"],
+            v_int4=u["v_int4"],
+            v_int2=u["v_base"],
+            k_page_min=km,
+            k_page_max=km + 15.0 * ks,
+        )
+    k_full = torch.cat([u["k_int4"], u["k_tail"]], dim=2)
+    v_full = torch.cat([u["v_int4"], u["v_tail"]], dim=2)
+    return pages, k_full, v_full, hist_len
+
+
+def _masked_bitplane_decode_fallback(
+    query: torch.Tensor,
+    layer: BitPlaneCacheLayer,
+    attention_mask: torch.Tensor,
+    scaling: float,
+    active: BitPlaneDynamicCache,
+) -> torch.Tensor:
+    """
+    当 Decode (`L_q == 1`) 收到 Left-padding 或自定义 Mask 时，按位面精度等价反量化执行精确带掩码解码，
+    保证 HuggingFace `attention_mask` 语义不静默失效。
+    """
+    if layer.pool is None:
+        raise RuntimeError("BitPlaneCacheLayer 尚未初始化，无法执行带掩码回退解码")
+    bsz = int(query.shape[0])
+    neg_inf = torch.finfo(torch.float32).min
+    ref_mode = "int4" if active.mode == "triton_int4" else "bitplane_dualstream"
+    outs: list[torch.Tensor] = []
+    bits_list: list[float] = []
+
+    for b in range(bsz):
+        sid = layer.seq_ids[b]
+        seq = layer.pool.sequences[sid]
+        pages_b, k_full_b, v_full_b, hist_len_b = _pool_seq_to_quantized_pages(layer.pool, sid)
+        total_len_b = int(k_full_b.shape[2])
+
+        if attention_mask.ndim == 4:
+            mask_b = attention_mask[0:1] if attention_mask.shape[0] == 1 else attention_mask[b : b + 1]
+        elif attention_mask.ndim == 2:
+            m2 = attention_mask[0:1] if attention_mask.shape[0] == 1 else attention_mask[b : b + 1]
+            mask_b = m2[:, None, None, :]
+        else:
+            raise ValueError(f"不支持的 attention_mask 维度: {tuple(attention_mask.shape)}")
+
+        if mask_b.shape[-1] > total_len_b:
+            mask_b = mask_b[..., :total_len_b]
+        if mask_b.dtype == torch.bool:
+            mask_b = torch.where(mask_b, 0.0, neg_inf).to(torch.float32)
+        else:
+            mask_b = mask_b.to(torch.float32)
+
+        out_b, st_b = paged_bitplane_attention_decode(
+            query=query[b : b + 1],
+            key=k_full_b,
+            value=v_full_b,
+            scaling=scaling,
+            attention_mask=mask_b,
+            mode=ref_mode,
+            page_size=layer.pool.page_size,
+            recent_tokens=max(1, seq.tail_len),
+            hist_len=hist_len_b,
+            pages_cache=pages_b,
+            hot_ratio=active.hot_ratio,
+            warm_ratio=active.warm_ratio,
+            ellipsoid_beta=active.beta,
+            pin_page0=active.pin_page0,
+            score_mode=active.score_mode,
+        )
+        outs.append(out_b)
+        if active.collect_stats:
+            bits_list.append(float(st_b["logical_read_bits_per_kv_elem"]))
+
+    if active.collect_stats and bits_list:
+        active.read_bits_samples.append(sum(bits_list) / len(bits_list))
+    return torch.cat(outs, dim=0).to(query.dtype)
+
+
 def _bitplane_paged_attention_interface(
     module: torch.nn.Module,
     query: torch.Tensor,
@@ -224,8 +351,8 @@ def _bitplane_paged_attention_interface(
     """
     注册于 HuggingFace `ALL_ATTENTION_FUNCTIONS["bitplane_paged"]` 的端到端注意力分派入口：
       - Prefill (`L_q > 1`)：委托原生 `sdpa_attention_forward`，避免生成 $O(L^2)$ Eager 显存尖峰；
-      - Decode (`L_q == 1`)：从当前上下文活跃的 `BitPlaneDynamicCache` 读取真物理页池 `PagedKVBatch`
-        并直接运行无分支双流 / INT4 Triton GPU 解码核。
+      - Decode (`L_q == 1`)：无屏蔽位时直通零分支物理页表 Triton 核；存在 Left-padding/自定义掩码时
+        按 `strict_mask` 显式报错或走高精度等价回退，确保 `attention_mask` 语义完整。
     """
     active = _ACTIVE_BITPLANE_CACHE.get()
     if active is None or query.shape[2] != 1:
@@ -266,6 +393,14 @@ def _bitplane_paged_attention_interface(
             **kwargs,
         )
 
+    if attention_mask is not None and _has_masked_positions(attention_mask):
+        if active.strict_mask:
+            raise NotImplementedError(
+                "BitPlaneDynamicCache 当前处于 strict_mask=True 模式，不支持含非平凡屏蔽位的 Decode Mask。"
+            )
+        out = _masked_bitplane_decode_fallback(query, layer, attention_mask, scaling, active)
+        return out, None
+
     batch = layer.build_batch()
     if active.mode == "triton_dualstream":
         out, st = triton_paged_bitplane_dualstream_decode(
@@ -299,6 +434,8 @@ def _bitplane_paged_attention_interface(
 
 
 ALL_ATTENTION_FUNCTIONS.register("bitplane_paged", _bitplane_paged_attention_interface)
+if "sdpa" in ALL_MASK_ATTENTION_FUNCTIONS:
+    ALL_MASK_ATTENTION_FUNCTIONS.register("bitplane_paged", ALL_MASK_ATTENTION_FUNCTIONS["sdpa"])
 
 
 class BitPlaneDynamicCache(Cache):
@@ -327,6 +464,7 @@ class BitPlaneDynamicCache(Cache):
         score_mode: str = "anisotropic",
         pin_page0: bool = True,
         collect_stats: bool = False,
+        strict_mask: bool = False,
     ) -> None:
         self.page_size = int(page_size)
         self.recent_tokens = int(recent_tokens)
@@ -338,6 +476,7 @@ class BitPlaneDynamicCache(Cache):
         self.score_mode = str(score_mode)
         self.pin_page0 = bool(pin_page0)
         self.collect_stats = bool(collect_stats)
+        self.strict_mask = bool(strict_mask)
         self.read_bits_samples: list[float] = []
 
         layers: list[Any] = []
@@ -384,32 +523,57 @@ class BitPlaneDynamicCache(Cache):
     @contextmanager
     def attach(self, model: torch.nn.Module) -> Iterator[BitPlaneDynamicCache]:
         """
-        将 `model` 的注意力实现临时切换为 `"bitplane_paged"` 并激活当前分页双位面上下文，
-        退出 `with` 代码块后精确恢复原 `_attn_implementation`。
+        使用进程内带锁引用计数安全切换共享 `model` 的 `_attn_implementation` 为 `"bitplane_paged"`，
+        并激活当前上下文的 `BitPlaneDynamicCache`。仅当最外层/最后一个并发持有者退出时才还原原配置，
+        防止交错并发请求恢复顺序冲突。
         """
-        saved_cfg: list[tuple[Any, Any]] = []
+        with _ATTACH_LOCK:
+            state = _MODEL_PATCH_STATE.get(model)
+            if state is None:
+                saved_cfg: list[tuple[Any, Any]] = []
+                seen_ids: set[int] = set()
 
-        def _set_impl(obj: Any, impl: str) -> None:
-            if hasattr(obj, "config") and obj.config is not None:
-                if hasattr(obj.config, "_attn_implementation"):
-                    saved_cfg.append((obj.config, obj.config._attn_implementation))
-                    obj.config._attn_implementation = impl
-                tc = getattr(obj.config, "text_config", None)
-                if tc is not None and hasattr(tc, "_attn_implementation"):
-                    saved_cfg.append((tc, tc._attn_implementation))
-                    tc._attn_implementation = impl
+                def _collect_and_set(obj: Any) -> None:
+                    if not hasattr(obj, "config") or obj.config is None:
+                        return
+                    for cfg in (obj.config, getattr(obj.config, "text_config", None)):
+                        if cfg is not None and hasattr(cfg, "_attn_implementation") and id(cfg) not in seen_ids:
+                            seen_ids.add(id(cfg))
+                            saved_cfg.append((cfg, cfg._attn_implementation))
+                            cfg._attn_implementation = "bitplane_paged"
 
-        _set_impl(model, "bitplane_paged")
-        for mod in model.modules():
-            _set_impl(mod, "bitplane_paged")
+                _collect_and_set(model)
+                for mod in model.modules():
+                    _collect_and_set(mod)
+                _MODEL_PATCH_STATE[model] = {"ref_count": 1, "saved_cfg": saved_cfg}
+            else:
+                state["ref_count"] += 1
 
         token = _ACTIVE_BITPLANE_CACHE.set(self)
         try:
             yield self
         finally:
             _ACTIVE_BITPLANE_CACHE.reset(token)
-            for cfg_obj, old_impl in reversed(saved_cfg):
-                cfg_obj._attn_implementation = old_impl
+            with _ATTACH_LOCK:
+                state = _MODEL_PATCH_STATE.get(model)
+                if state is not None:
+                    state["ref_count"] -= 1
+                    if state["ref_count"] <= 0:
+                        _MODEL_PATCH_STATE.pop(model, None)
+                        for cfg_obj, old_impl in reversed(state["saved_cfg"]):
+                            cfg_obj._attn_implementation = old_impl
+
+    @contextmanager
+    def activate(self) -> Iterator[BitPlaneDynamicCache]:
+        """
+        无状态激活当前 `BitPlaneDynamicCache` 上下文，不触碰共享 `model.config`。
+        推荐先对模型执行一次 `model.set_attn_implementation("bitplane_paged")`，随后高并发请求均使用 `with cache.activate():`。
+        """
+        token = _ACTIVE_BITPLANE_CACHE.set(self)
+        try:
+            yield self
+        finally:
+            _ACTIVE_BITPLANE_CACHE.reset(token)
 
     def memory_stats(self) -> dict[str, Any]:
         """聚合统计全部全局注意力层物理页池的真实 GPU 显存占用与相对 BF16/FP16 压缩比。"""
